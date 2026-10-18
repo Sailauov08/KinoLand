@@ -20,7 +20,7 @@ import { getLocale } from "@/lib/i18n/server";
 import { logger } from "@/lib/logger";
 import { parseFilters } from "@/lib/movies/filters";
 import { getMovie, searchMovies } from "@/lib/movies/service";
-import { toSnapshot, type MovieSummary } from "@/lib/movies/types";
+import { toSnapshot, type MovieSummary, type UnavailableReason } from "@/lib/movies/types";
 import { collectionSchema, fieldErrors, movieIdSchema, spotlightInputSchema } from "@/lib/validation";
 import type { FormState } from "./types";
 
@@ -94,9 +94,9 @@ export async function addCollectionItemAction(rawCollectionId: unknown, rawMovie
   const movieId = movieIdSchema.parse(rawMovieId);
   const c = getCollectionById(collectionId);
   if (!c) return { ok: false };
-  const { data: movie } = await getMovie(movieId, "en");
-  if (!movie) return { ok: false };
-  addCollectionItem(collectionId, toSnapshot(movie));
+  const res = await getMovie(movieId, "en");
+  if (!res.ok || !res.data) return { ok: false };
+  addCollectionItem(collectionId, toSnapshot(res.data));
   revalidateEditorial(c.slug);
   revalidatePath(`/admin/collections/${collectionId}`);
   return { ok: true };
@@ -122,12 +122,13 @@ export async function moveCollectionItemAction(formData: FormData) {
 }
 
 /** Title search used by the admin movie picker. */
-export async function adminSearchAction(query: unknown): Promise<{ results: MovieSummary[]; source: string }> {
+export async function adminSearchAction(query: unknown): Promise<{ results: MovieSummary[]; unavailable?: UnavailableReason }> {
   await assertAdmin();
   const q = z.string().trim().min(1).max(100).safeParse(query);
-  if (!q.success) return { results: [], source: "live" };
+  if (!q.success) return { results: [] };
   const res = await searchMovies(parseFilters({ q: q.data }), await getLocale());
-  return { results: res.data.results.slice(0, 12), source: res.source };
+  if (!res.ok) return { results: [], unavailable: res.reason };
+  return { results: res.data.results.slice(0, 12) };
 }
 
 export async function saveSpotlightAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -137,8 +138,9 @@ export async function saveSpotlightAction(_prev: FormState, formData: FormData):
     tagline: { en: formData.get("tagline_en") ?? "", ru: formData.get("tagline_ru") ?? "", kk: formData.get("tagline_kk") ?? "" },
   });
   if (!parsed.success) return { error: "auth.invalidInput", fields: fieldErrors(parsed.error) };
-  const { data: movie } = await getMovie(parsed.data.movieId, "en");
-  if (!movie) return { error: "admin.notFoundMovie", fields: { movieId: true } };
+  const movie = await getMovie(parsed.data.movieId, "en");
+  if (!movie.ok) return { error: "unavailable.title" };
+  if (!movie.data) return { error: "admin.notFoundMovie", fields: { movieId: true } };
   setSpotlight(parsed.data);
   logger.info("admin.spotlight_set", { adminId: admin.id, movieId: parsed.data.movieId });
   revalidateEditorial();

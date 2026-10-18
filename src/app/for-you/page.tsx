@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { DataNotice } from "@/components/data-notice";
+import { MoviesUnavailable } from "@/components/movies-unavailable";
 import { SparklesIcon } from "@/components/icons";
 import { MovieCard, MovieGrid } from "@/components/movie-card";
 import { GridSkeleton } from "@/components/rail-section";
@@ -48,6 +48,7 @@ export default async function ForYouPage() {
 
 async function Recommendations({ user, locale, t }: { user: User; locale: Locale; t: TFunction }) {
   const rec = await getRecommendationsFor(user, locale, 30);
+  if (rec.unavailable) return <MoviesUnavailable reason={rec.unavailable} t={t} />;
   if (!rec.hasTaste || !rec.items.length) {
     return (
       <EmptyState
@@ -68,10 +69,9 @@ async function Recommendations({ user, locale, t }: { user: User; locale: Locale
           </Badge>
         ))}
       </div>
-      <DataNotice notice={rec.notice} t={t} inline />
       <MovieGrid>
         {rec.items.map(({ movie }, i) => (
-          <MovieCard key={movie.id} movie={movie} locale={locale} t={t} demo={rec.source === "demo"} priority={i < 6} />
+          <MovieCard key={movie.id} movie={movie} locale={locale} priority={i < 6} />
         ))}
       </MovieGrid>
     </>

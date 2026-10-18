@@ -9,6 +9,7 @@ import { getSpotlight } from "@/lib/db/settings";
 import { formatDate } from "@/lib/format";
 import { getT } from "@/lib/i18n/server";
 import { getMovie } from "@/lib/movies/service";
+import { isTmdbConfigured } from "@/lib/env";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getT();
@@ -20,7 +21,9 @@ export default async function AdminPage() {
   const { locale, t } = await getT();
   const collections = listCollections();
   const spotlight = getSpotlight();
-  const spotlightMovie = spotlight ? (await getMovie(spotlight.movieId, locale)).data : null;
+  const spotlightRes = spotlight ? await getMovie(spotlight.movieId, locale) : null;
+  const spotlightMovie = spotlightRes?.ok ? spotlightRes.data : null;
+  const tmdbReady = isTmdbConfigured();
 
   return (
     <div className="grid gap-10 xl:grid-cols-[1fr_400px]">
@@ -80,7 +83,15 @@ export default async function AdminPage() {
         )}
       </section>
 
-      <section aria-labelledby="spotlight-heading" className="min-w-0 h-fit rounded-3xl bg-surface p-6 ring-1 ring-line">
+      <div className="min-w-0 space-y-6">
+      <section aria-labelledby="tmdb-heading" className="rounded-3xl bg-surface p-6 ring-1 ring-line">
+        <h2 id="tmdb-heading" className="font-display text-base font-medium">{t("admin.tmdbStatus")}</h2>
+        <p className="mt-3 flex items-start gap-2 text-sm">
+          <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${tmdbReady ? "bg-success" : "bg-danger"}`} />
+          <span className={tmdbReady ? "text-success" : "text-danger"}>{tmdbReady ? t("admin.tmdbOk") : t("admin.tmdbMissing")}</span>
+        </p>
+      </section>
+      <section aria-labelledby="spotlight-heading" className="h-fit rounded-3xl bg-surface p-6 ring-1 ring-line">
         <h2 id="spotlight-heading" className="font-display text-lg font-medium">{t("admin.spotlight")}</h2>
         <p className="mt-1 mb-5 text-sm text-muted">{t("admin.spotlightHint")}</p>
         <p className="mb-5 rounded-2xl bg-surface-2 px-4 py-3 text-sm">
@@ -88,6 +99,7 @@ export default async function AdminPage() {
         </p>
         <SpotlightForm current={spotlight} />
       </section>
+      </div>
     </div>
   );
 }

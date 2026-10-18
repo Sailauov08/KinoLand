@@ -1,6 +1,6 @@
 import "server-only";
 import type { Locale } from "@/lib/i18n/config";
-import type { MovieSnapshot } from "@/lib/movies/types";
+import { toSnapshot, type MovieSnapshot, type MovieSummary } from "@/lib/movies/types";
 import { getDb } from "./index";
 
 export interface LocalizedText {
@@ -182,4 +182,13 @@ export function moveCollectionItem(collectionId: number, movieId: number, direct
     throw err;
   }
   touch(collectionId);
+}
+
+/** Rewrites stored snapshots for a collection's films when TMDB returned newer data. */
+export function refreshCollectionSnapshots(collectionId: number, movies: MovieSummary[]) {
+  const stmt = getDb().prepare("UPDATE collection_items SET snapshot = ? WHERE collection_id = ? AND movie_id = ? AND snapshot != ?");
+  for (const m of movies) {
+    const json = JSON.stringify(toSnapshot(m));
+    stmt.run(json, collectionId, m.id, json);
+  }
 }

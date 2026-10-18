@@ -4,8 +4,9 @@ KINO is a full-stack movie discovery app: featured and trending films, a filtera
 film pages with cast and official trailers, advanced search, watchlist & favourites, personal
 recommendations, an editorial admin area, and a full **English / Русский / Қазақша** interface.
 
-Film metadata comes from **[TMDB](https://www.themoviedb.org/)**. Without a TMDB key the app runs on a
-clearly-labelled offline demo catalogue (no ratings, no posters — nothing is invented).
+All film data — titles, overviews, ratings, posters, backdrops, cast, directors and trailers — comes
+live from **[TMDB](https://www.themoviedb.org/)**. There is no demo or placeholder catalogue: you only
+need to add a TMDB key to `.env.local`.
 
 ## Quick start
 
@@ -29,8 +30,12 @@ so there is no native module to compile and no database server to run.
    ```
 
    Alternatively set `TMDB_API_KEY=` to the short v3 key. Only one is needed.
-3. Restart `npm run dev`. The amber "Demo data" bar disappears and real posters, ratings, cast and
-   trailers load.
+3. Restart `npm run dev`. Real posters, ratings, cast and trailers load everywhere.
+
+**Without a key**, pages show a "Connect TMDB" setup card in development (with the exact line to add)
+and the server logs `tmdb.not_configured` once. In a production build, visitors see only a short
+"Movies are unavailable right now" message instead of setup details. The admin page always shows the
+TMDB connection status.
 
 `.env.local` is gitignored — never commit it. The token is only used server-side; it is never sent to
 the browser or written to logs.
@@ -98,8 +103,8 @@ src/
     error.tsx, global-error.tsx, not-found.tsx, loading.tsx
   components/             UI (header, hero, cards, rails, filters, trailer, forms, admin widgets)
   lib/
-    movies/               TMDB client, zod response schemas/mappers, service with demo fallback,
-                          demo catalogue, filters, recommendation scoring, genres
+    movies/               TMDB client, zod response schemas/mappers, live service, image loader,
+                          filters, recommendation scoring, genres
     db/                   node:sqlite connection, migrations, repositories
     auth/                 scrypt password hashing, DB-backed sessions, rate limiting
     i18n/                 locale config, en/ru/kk dictionaries, server helpers
@@ -110,15 +115,23 @@ scripts/promote-admin.mjs
 
 - **Stack:** Next.js 16 (App Router, Turbopack), React 19, TypeScript strict, Tailwind CSS v4, zod 4,
   SQLite via `node:sqlite`, Vitest.
-- **Data flow:** every movie call goes through `lib/movies/service.ts`. It returns
-  `{ data, source: "live" | "demo", notice }` so the UI can label demo content honestly. TMDB responses
-  are cached in the Next.js data cache (1 h for lists, 24 h for details). On a TMDB failure a 60 s
-  circuit breaker serves demo data immediately instead of waiting on timeouts.
+- **Data flow:** every movie call goes through `lib/movies/service.ts`, which returns
+  `{ ok: true, data }` or `{ ok: false, reason: "unconfigured" | "unavailable" }` — never substitute
+  content. Pages render a setup/unavailable state, and home-page rails simply hide. TMDB responses are
+  cached in the Next.js data cache (1 h for lists, 24 h for details). After a TMDB failure, a 60 s
+  circuit breaker fails fast instead of making every page wait on timeouts.
+- **Missing fields:** if TMDB has no Russian/Kazakh synopsis, tagline or artwork for a title, the
+  English values are used. Titles with no poster get a neutral placeholder, and a missing backdrop
+  falls back to the blurred poster or a soft gradient.
+- **Images:** `next/image` with a custom loader (`lib/movies/tmdb-image-loader.ts`) maps each srcset
+  width to the nearest pre-sized TMDB rendition (`w92`…`w1280`, `original`), served straight from
+  TMDB's CDN, so the server never re-encodes images. Broken images swap to the placeholder.
 - **Caching model:** `cacheComponents` is disabled on purpose. Every page depends on per-request
   cookies (locale + session), so the classic model with `fetch` revalidation is simpler and correct.
 - **Persistence:** `data/kino.db` (gitignored). Tables: users, sessions, list_items, collections,
   collection_items, settings. List/collection rows store a small movie snapshot so they render even
-  when TMDB is unreachable; pages refresh titles in the current language when possible.
+  when TMDB is unreachable; pages refresh them from TMDB in the current language and write the
+  fresh data back.
 - **Security:** scrypt password hashes, random 256-bit session tokens stored only as SHA-256 hashes,
   httpOnly + SameSite=Lax cookies (Secure in production), login/registration rate limiting,
   constant-time password checks, open-redirect-safe `next` handling, server-side re-authorisation in
@@ -133,16 +146,9 @@ scripts/promote-admin.mjs
   [terms of use](https://www.themoviedb.org/api-terms-of-use) before commercial use.
 - Trailers are TMDB-listed official YouTube videos embedded via YouTube's player. KINO does not
   host, scrape or stream films.
-- The demo catalogue holds factual metadata only (title, year, runtime, genres, language, director,
-  principal cast) for well-known films, keyed by their real TMDB ids. Synopses are short original
-  one-line premises, ratings are deliberately absent, and posters are generated abstract artwork
-  labelled "Demo artwork".
 
 ## Known limitations
 
-- Live TMDB data couldn't be verified end-to-end without a key. The client, mappers and fallback
-  are covered by mocked-response tests, and the outage path was tested against the real API with an
-  invalid key.
 - SQLite + in-memory rate limiting and circuit breaker assume a **single server instance**. For
   multi-instance or serverless hosting, move to PostgreSQL and a shared store (e.g. Redis).
 - Hosts with an ephemeral filesystem (e.g. Vercel) need a persistent volume or an external database

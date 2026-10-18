@@ -22,11 +22,17 @@ export const ru: Dictionary = {
   "nav.account": "Аккаунт",
   "nav.quickSearch": "Поиск фильмов…",
 
-  "data.demoUnconfigured": "Демо-режим: показан офлайн-каталог без рейтингов и постеров. Добавьте ключ TMDB API, чтобы включить живые данные.",
-  "data.demoUnavailable": "Живые данные временно недоступны — показан офлайн демо-каталог.",
-  "data.demoBadge": "Демо-данные",
-  "data.demoArtwork": "Демо-обложка",
   "data.noRating": "Нет оценки",
+
+  "setup.title": "Подключите TMDB, чтобы загрузить фильмы",
+  "setup.text": "KINO показывает реальные данные о фильмах из The Movie Database. Добавьте токен TMDB API Read Access Token в файл .env.local в корне проекта и перезапустите dev-сервер.",
+  "setup.link": "Получить бесплатный ключ TMDB API",
+  "setup.devOnly": "Эта подсказка видна только в режиме разработки.",
+  "unavailable.title": "Фильмы сейчас недоступны",
+  "unavailable.text": "Не удалось связаться с базой фильмов. Попробуйте ещё раз чуть позже.",
+  "admin.tmdbStatus": "Подключение к TMDB",
+  "admin.tmdbOk": "Подключено — живые данные",
+  "admin.tmdbMissing": "Не настроено. Добавьте TMDB_READ_ACCESS_TOKEN в .env.local и перезапустите сервер.",
 
   "home.trending": "В тренде на этой неделе",
   "home.topRated": "С высшим рейтингом",
@@ -61,7 +67,6 @@ export const ru: Dictionary = {
   "movie.trailer": "Трейлер",
   "movie.playTrailer": "Смотреть трейлер",
   "movie.noTrailer": "Официальный трейлер для этого фильма недоступен.",
-  "movie.noTrailerDemo": "Трейлеры загружаются из официальных видео TMDB при включённых живых данных.",
   "movie.trailerConsent": "Воспроизводится с YouTube (режим повышенной конфиденциальности).",
   "movie.similar": "Похожие фильмы",
   "movie.noOverview": "Описание на этом языке пока недоступно.",
@@ -90,8 +95,7 @@ export const ru: Dictionary = {
   "list.addedOn": "Добавлено {date}",
 
   "top.title": "Топ-100",
-  "top.subtitle": "Сто фильмов с самым высоким рейтингом по оценкам сообщества TMDB.",
-  "top.subtitleDemo": "Демо-подборка — для рейтинга нужны живые данные TMDB, поэтому фильмы показаны в порядке редакции.",
+  "top.subtitle": "Сто фильмов с самым высоким рейтингом по оценкам сообщества TMDB — среди фильмов, набравших не менее 3 000 голосов.",
   "top.showing": "Показано {shown} из {total}",
   "top.rank": "Место",
 

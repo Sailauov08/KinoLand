@@ -12,7 +12,9 @@ const nextConfig: NextConfig = {
   // classic caching model is used; TMDB responses are cached via fetch revalidation.
   cacheComponents: false,
   images: {
-    remotePatterns: [{ protocol: "https", hostname: "image.tmdb.org", pathname: "/t/p/**" }],
+    // TMDB serves pre-sized artwork from its CDN; the loader picks the right size per srcset width.
+    loader: "custom",
+    loaderFile: "./src/lib/movies/tmdb-image-loader.ts",
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

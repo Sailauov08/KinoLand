@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { z } from "zod";
-import { DataNotice } from "@/components/data-notice";
+import { MoviesUnavailable } from "@/components/movies-unavailable";
 import { FilmIcon } from "@/components/icons";
 import { CardWatchlistButton } from "@/components/list-buttons";
 import { FilterPanel } from "@/components/filter-panel";
@@ -30,7 +30,14 @@ export default async function TopPage({ searchParams }: PageProps<"/top">) {
   const genre = filters.genres[0] ?? null;
 
   const res = await getTop100(locale);
-  const demo = res.source === "demo";
+  if (!res.ok) {
+    return (
+      <div className="container-page">
+        <PageHeader title={t("top.title")} eyebrow="KINO" subtitle={t("top.subtitle")} />
+        <MoviesUnavailable reason={res.reason} t={t} />
+      </div>
+    );
+  }
   const ranked = res.data.map((movie, i) => ({ movie, rank: i + 1 }));
 
   let filtered = ranked.filter(({ movie }) => {
@@ -53,7 +60,7 @@ export default async function TopPage({ searchParams }: PageProps<"/top">) {
 
   return (
     <div className="container-page">
-      <PageHeader title={t("top.title")} eyebrow="KINO" subtitle={demo ? t("top.subtitleDemo") : t("top.subtitle")} />
+      <PageHeader title={t("top.title")} eyebrow="KINO" subtitle={t("top.subtitle")} />
       <FilterPanel
         mode="top"
         values={{ genres: genre ? [genre] : [], decade: decade.success ? decade.data : null, lang: filters.language, sort }}
@@ -62,7 +69,6 @@ export default async function TopPage({ searchParams }: PageProps<"/top">) {
         decades={decades}
         sorts={TOP_SORTS.map((s) => ({ value: s, label: t(s === "rank" ? "filters.sort.rank" : `filters.sort.${s}`) }))}
       />
-      <DataNotice notice={res.notice} t={t} inline />
 
       <p className="mt-10 mb-4 text-sm text-muted" aria-live="polite">
         {t("top.showing", { shown: filtered.length, total: res.data.length })}
@@ -71,7 +77,7 @@ export default async function TopPage({ searchParams }: PageProps<"/top">) {
       {filtered.length ? (
         <ol className="grid gap-3 md:grid-cols-2">
           {filtered.map(({ movie, rank }) => (
-            <li key={movie.id} className="group relative">
+            <li key={movie.id} className="group relative min-w-0">
               <Link
                 href={`/movie/${movie.id}`}
                 className="flex items-center gap-4 rounded-2xl bg-surface p-3 pr-14 ring-1 ring-line transition duration-300 hover:bg-surface-2 hover:ring-line-strong sm:gap-5"
@@ -83,12 +89,11 @@ export default async function TopPage({ searchParams }: PageProps<"/top">) {
                   {rank}
                 </span>
                 <PosterImage
-                  id={movie.id}
                   title={movie.title}
                   year={movie.year}
                   path={movie.posterPath}
-                  size="w185"
                   sizes="64px"
+                  priority={rank <= 4 && sort === "rank"}
                   thumb
                   className="w-14 shrink-0 rounded-lg sm:w-16"
                 />
@@ -97,7 +102,7 @@ export default async function TopPage({ searchParams }: PageProps<"/top">) {
                   <p className="mt-1 line-clamp-1 text-xs text-subtle">
                     {[movie.year, ...movie.genreIds.slice(0, 2).map((g) => genreName(g, locale))].filter(Boolean).join(" · ")}
                   </p>
-                  <div className="mt-2 flex items-center gap-2 text-xs text-muted">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
                     {movie.voteAverage !== null ? (
                       <>
                         <RatingPill value={movie.voteAverage} />

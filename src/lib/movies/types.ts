@@ -1,7 +1,8 @@
-export type DataSource = "live" | "demo";
+/** Why movie data could not be loaded: no TMDB credentials, or TMDB failed / timed out. */
+export type UnavailableReason = "unconfigured" | "unavailable";
 
-/** Why demo data is shown: no key configured, or the live API failed. */
-export type DataNotice = "unconfigured" | "unavailable";
+/** Outcome of a TMDB-backed call. There is no substitute content: either real data or a reason. */
+export type MovieResult<T> = { ok: true; data: T } | { ok: false; reason: UnavailableReason };
 
 export interface MovieSummary {
   id: number;
@@ -11,7 +12,7 @@ export interface MovieSummary {
   year: number | null;
   posterPath: string | null;
   backdropPath: string | null;
-  /** TMDB community score 0–10. Null when unknown (demo data never invents ratings). */
+  /** TMDB community score 0–10. Null when TMDB has no votes for the title. */
   voteAverage: number | null;
   voteCount: number | null;
   popularity: number | null;
@@ -47,12 +48,6 @@ export interface MovieDetails extends MovieSummary {
   homepage: string | null;
   imdbId: string | null;
   recommendations: MovieSummary[];
-}
-
-export interface Sourced<T> {
-  data: T;
-  source: DataSource;
-  notice?: DataNotice;
 }
 
 export interface Paged<T> {

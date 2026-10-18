@@ -33,7 +33,7 @@ export function Hero({
   return (
     <section aria-labelledby="hero-title" className="relative -mt-16 flex min-h-[78svh] items-end overflow-hidden sm:min-h-[86svh]">
       <div className="absolute inset-0">
-        <BackdropImage id={movie.id} title={movie.title} path={movie.backdropPath} size="original" priority className="animate-[fade-up_1.2s_var(--ease-cinema)_both]" />
+        <BackdropImage path={movie.backdropPath} fallbackPosterPath={movie.posterPath} priority className="animate-[fade-up_1.2s_var(--ease-cinema)_both]" />
         <div className="absolute inset-0 bg-gradient-to-r from-ink via-ink/70 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/20 to-black/30" />
       </div>

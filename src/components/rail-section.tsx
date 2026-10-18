@@ -14,7 +14,6 @@ export function RailSection({
   locale,
   t,
   href,
-  demo,
   ranked,
 }: {
   title: string;
@@ -23,7 +22,6 @@ export function RailSection({
   locale: Locale;
   t: TFunction;
   href?: string;
-  demo?: boolean;
   ranked?: boolean;
 }) {
   if (!movies.length) return null;
@@ -43,7 +41,7 @@ export function RailSection({
       />
       <MovieRail label={title}>
         {movies.map((m, i) => (
-          <MovieCard key={m.id} movie={m} locale={locale} t={t} demo={demo} rank={ranked ? i + 1 : undefined} />
+          <MovieCard key={m.id} movie={m} locale={locale} rank={ranked ? i + 1 : undefined} />
         ))}
       </MovieRail>
     </section>

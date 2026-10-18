@@ -13,14 +13,9 @@ export async function getRecommendationsFor(user: User, locale: Locale, limit = 
   };
   const genres = topGenres(genreAffinity(taste), 3);
   const hasTaste = genres.length > 0;
-  if (!hasTaste) return { hasTaste, genres, items: [], source: "live" as const, notice: undefined };
+  if (!hasTaste) return { hasTaste, genres, items: [], unavailable: undefined };
   const seeds = [...taste.favorites, ...taste.watchlist].map((m) => m.id);
   const candidates = await getRecommendationCandidates(genres, seeds, locale);
-  return {
-    hasTaste,
-    genres,
-    items: rankRecommendations(candidates.data, taste, limit),
-    source: candidates.source,
-    notice: candidates.notice,
-  };
+  if (!candidates.ok) return { hasTaste, genres, items: [], unavailable: candidates.reason };
+  return { hasTaste, genres, items: rankRecommendations(candidates.data, taste, limit), unavailable: undefined };
 }

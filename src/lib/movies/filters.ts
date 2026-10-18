@@ -1,6 +1,6 @@
 /**
- * Search/discover filter parsing and in-memory filtering/sorting. Pure functions, shared by
- * the live (post-filtering search results, Top 100) and demo providers.
+ * Search/discover filter parsing and in-memory filtering/sorting (used to post-filter text
+ * search results and the Top 100). Pure functions.
  */
 import { z } from "zod";
 import { GENRE_IDS } from "./genres";

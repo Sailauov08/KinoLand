@@ -20,7 +20,7 @@ export default async function CollectionsPage() {
       <PageHeader title={t("collections.title")} eyebrow="KINO" subtitle={t("collections.subtitle")} />
       {collections.length ? (
         <ul className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {collections.map((c) => {
+          {collections.map((c, ci) => {
             const posters = getCollectionItems(c.id).slice(0, 4);
             return (
               <li key={c.id}>
@@ -33,12 +33,11 @@ export default async function CollectionsPage() {
                       posters.map((p) => (
                         <PosterImage
                           key={p.movieId}
-                          id={p.movieId}
                           title={p.snapshot.title}
                           year={p.snapshot.year}
                           path={p.snapshot.posterPath}
-                          size="w185"
                           sizes="120px"
+                          priority={ci < 3}
                           className="h-full rounded-xl transition duration-700 group-hover:scale-[1.03]"
                         />
                       ))

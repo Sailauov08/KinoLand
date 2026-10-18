@@ -27,9 +27,10 @@ export async function toggleListAction(rawMovieId: unknown, rawList: unknown, de
       return { ok: true, inList: false };
     }
     if (isInList(user.id, list.data, movieId.data)) return { ok: true, inList: true };
-    const { data: movie } = await getMovie(movieId.data, await getLocale());
-    if (!movie) return { ok: false, reason: "not_found" };
-    addToList(user.id, list.data, toSnapshot(movie));
+    const res = await getMovie(movieId.data, await getLocale());
+    if (!res.ok) return { ok: false, reason: "error" };
+    if (!res.data) return { ok: false, reason: "not_found" };
+    addToList(user.id, list.data, toSnapshot(res.data));
     return { ok: true, inList: true };
   } catch (err) {
     logger.error("lists.toggle_failed", { userId: user.id, error: err instanceof Error ? err.message : String(err) });

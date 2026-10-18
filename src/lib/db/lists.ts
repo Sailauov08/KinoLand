@@ -1,5 +1,5 @@
 import "server-only";
-import type { MovieSnapshot } from "@/lib/movies/types";
+import { toSnapshot, type MovieSnapshot, type MovieSummary } from "@/lib/movies/types";
 import { getDb } from "./index";
 
 export type ListName = "watchlist" | "favorite";
@@ -58,4 +58,14 @@ export function removeFromList(userId: string, list: ListName, movieId: number) 
 
 export function isInList(userId: string, list: ListName, movieId: number): boolean {
   return !!getDb().prepare("SELECT 1 FROM list_items WHERE user_id = ? AND list = ? AND movie_id = ?").get(userId, list, movieId);
+}
+
+/** Rewrites stored snapshots for this user's saved films when TMDB returned newer data. */
+export function refreshListSnapshots(userId: string, movies: MovieSummary[]) {
+  const db = getDb();
+  const stmt = db.prepare("UPDATE list_items SET snapshot = ? WHERE user_id = ? AND movie_id = ? AND snapshot != ?");
+  for (const m of movies) {
+    const json = JSON.stringify(toSnapshot(m));
+    stmt.run(json, userId, m.id, json);
+  }
 }

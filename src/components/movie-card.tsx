@@ -1,7 +1,6 @@
 import clsx from "clsx";
 import Link from "next/link";
 import type { Locale } from "@/lib/i18n/config";
-import type { TFunction } from "@/lib/i18n/translate";
 import { genreName } from "@/lib/movies/genres";
 import type { MovieSummary } from "@/lib/movies/types";
 import { CardWatchlistButton } from "./list-buttons";
@@ -11,18 +10,14 @@ import { RatingPill } from "./rating";
 export function MovieCard({
   movie,
   locale,
-  t,
   rank,
   priority,
-  demo,
   className,
 }: {
   movie: MovieSummary;
   locale: Locale;
-  t: TFunction;
   rank?: number;
   priority?: boolean;
-  demo?: boolean;
   className?: string;
 }) {
   const genres = movie.genreIds.slice(0, 2).map((g) => genreName(g, locale)).filter(Boolean).join(" · ");
@@ -35,12 +30,10 @@ export function MovieCard({
       >
         <div className="relative overflow-hidden rounded-2xl bg-surface-2 ring-1 ring-white/6 transition duration-500 ease-[var(--ease-cinema)] group-hover:-translate-y-1 group-hover:ring-white/20 group-hover:shadow-[0_24px_50px_-20px_rgba(0,0,0,0.9)]">
           <PosterImage
-            id={movie.id}
             title={movie.title}
             year={movie.year}
             path={movie.posterPath}
             priority={priority}
-            demoLabel={demo && !movie.posterPath ? t("data.demoArtwork") : undefined}
             className="transition duration-700 ease-[var(--ease-cinema)] group-hover:scale-[1.04]"
           />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent opacity-0 transition duration-500 group-hover:opacity-100" />

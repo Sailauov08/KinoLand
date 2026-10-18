@@ -1,21 +1,21 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { DataNotice } from "@/components/data-notice";
+import { MoviesUnavailable } from "@/components/movies-unavailable";
 import { Hero } from "@/components/hero";
 import { SparklesIcon } from "@/components/icons";
 import { RailSection, RailSkeleton } from "@/components/rail-section";
 import { buttonClass } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getCollectionItems, listCollections, localized, type Collection } from "@/lib/db/collections";
-import { getList } from "@/lib/db/lists";
+import { getCollectionItems, listCollections, localized, refreshCollectionSnapshots, type Collection } from "@/lib/db/collections";
+import { getList, refreshListSnapshots } from "@/lib/db/lists";
 import { getSpotlight } from "@/lib/db/settings";
 import type { User } from "@/lib/db/users";
 import type { Locale } from "@/lib/i18n/config";
 import { getT } from "@/lib/i18n/server";
 import type { TFunction } from "@/lib/i18n/translate";
 import { genreName } from "@/lib/movies/genres";
-import { getByGenre, getMovie, getMovieSummaries, getNowPlaying, getTopRatedRail, getTrending, getUpcoming } from "@/lib/movies/service";
-import { fromSnapshot } from "@/lib/movies/types";
+import { getByGenre, getMovie, getNowPlaying, getTopRatedRail, getTrending, getUpcoming } from "@/lib/movies/service";
+import { withFreshData } from "@/lib/movies/fresh";
 import { getRecommendationsFor } from "@/lib/recommendations";
 
 type Ctx = { locale: Locale; t: TFunction };
@@ -42,7 +42,11 @@ export default async function HomePage() {
         <TrendingRail {...ctx} />
       </Suspense>
 
-      {user ? <WatchlistRail user={user} {...ctx} /> : null}
+      {user ? (
+        <Suspense fallback={<RailSkeleton />}>
+          <WatchlistRail user={user} {...ctx} />
+        </Suspense>
+      ) : null}
 
       {featured.map((c) => (
         <Suspense key={c.id} fallback={<RailSkeleton />}>
@@ -76,41 +80,34 @@ export default async function HomePage() {
 async function HomeHero({ locale, t }: Ctx) {
   const spotlight = getSpotlight();
   let movieId = spotlight?.movieId;
-  let notice;
   if (!movieId) {
     const trending = await getTrending(locale);
-    notice = trending.notice;
+    if (!trending.ok) return <MoviesUnavailable reason={trending.reason} t={t} className="container-page pt-10" />;
     movieId = trending.data[0]?.id;
   }
   const res = movieId ? await getMovie(movieId, locale) : null;
+  if (res && !res.ok) return <MoviesUnavailable reason={res.reason} t={t} className="container-page pt-10" />;
   const movie = res?.data;
   if (!movie) return <div className="h-8" />;
   return (
-    <>
-      <Hero
-        movie={movie}
-        locale={locale}
-        t={t}
-        eyebrow={spotlight ? t("home.editorsPick") : t("home.featured")}
-        tagline={spotlight ? spotlight.tagline[locale] || spotlight.tagline.en || undefined : undefined}
-      />
-      <div className="container-page">
-        <DataNotice notice={notice ?? res?.notice} t={t} inline />
-      </div>
-    </>
+    <Hero
+      movie={movie}
+      locale={locale}
+      t={t}
+      eyebrow={spotlight ? t("home.editorsPick") : t("home.featured")}
+      tagline={spotlight ? spotlight.tagline[locale] || spotlight.tagline.en || undefined : undefined}
+    />
   );
 }
 
 async function CollectionRail({ collection: c, ...ctx }: Ctx & { collection: Collection }) {
   const items = getCollectionItems(c.id);
-  // Localize titles for the current UI language; stored snapshots are the fallback.
-  const fresh = await getMovieSummaries(items.map((i) => i.movieId), ctx.locale);
+  const movies = await withFreshData(items.map((i) => i.snapshot), ctx.locale, (fresh) => refreshCollectionSnapshots(c.id, fresh));
   return (
     <RailSection
       title={localized(c.title, ctx.locale)}
       eyebrow={ctx.t("home.editorsPick")}
-      movies={items.map((i) => fresh.data.get(i.movieId) ?? fromSnapshot(i.snapshot))}
-      demo={fresh.source === "demo"}
+      movies={movies}
       href={`/collections/${c.slug}`}
       {...ctx}
     />
@@ -119,32 +116,31 @@ async function CollectionRail({ collection: c, ...ctx }: Ctx & { collection: Col
 
 async function TrendingRail(ctx: Ctx) {
   const res = await getTrending(ctx.locale);
-  return <RailSection title={ctx.t("home.trending")} movies={res.data} demo={res.source === "demo"} href="/search" {...ctx} />;
+  return res.ok ? <RailSection title={ctx.t("home.trending")} movies={res.data} href="/search" {...ctx} /> : null;
 }
 
 async function TopRatedRail(ctx: Ctx) {
   const res = await getTopRatedRail(ctx.locale);
-  return <RailSection title={ctx.t("home.topRated")} movies={res.data} demo={res.source === "demo"} href="/top" ranked {...ctx} />;
+  return res.ok ? <RailSection title={ctx.t("home.topRated")} movies={res.data} href="/top" ranked {...ctx} /> : null;
 }
 
 async function NowPlayingRail(ctx: Ctx) {
   const res = await getNowPlaying(ctx.locale);
-  return <RailSection title={ctx.t("home.nowPlaying")} movies={res.data} demo={res.source === "demo"} {...ctx} />;
+  return res.ok ? <RailSection title={ctx.t("home.nowPlaying")} movies={res.data} {...ctx} /> : null;
 }
 
 async function UpcomingRail(ctx: Ctx) {
   const res = await getUpcoming(ctx.locale);
-  return <RailSection title={ctx.t("home.upcoming")} movies={res.data} demo={res.source === "demo"} {...ctx} />;
+  return res.ok ? <RailSection title={ctx.t("home.upcoming")} movies={res.data} {...ctx} /> : null;
 }
 
 async function GenreRail({ genre, ...ctx }: Ctx & { genre: number }) {
   const res = await getByGenre(genre, ctx.locale);
-  const name = genreName(genre, ctx.locale) ?? "";
+  if (!res.ok) return null;
   return (
     <RailSection
-      title={ctx.t("home.byGenre", { genre: name })}
+      title={ctx.t("home.byGenre", { genre: genreName(genre, ctx.locale) ?? "" })}
       movies={res.data}
-      demo={res.source === "demo"}
       href={`/search?genre=${genre}`}
       {...ctx}
     />
@@ -159,23 +155,16 @@ async function ForYouRail({ user, ...ctx }: Ctx & { user: User }) {
       title={ctx.t("home.forYou")}
       eyebrow={ctx.t("home.forYouHint")}
       movies={rec.items.map((r) => r.movie)}
-      demo={rec.source === "demo"}
       href="/for-you"
       {...ctx}
     />
   );
 }
 
-function WatchlistRail({ user, ...ctx }: Ctx & { user: User }) {
-  const items = getList(user.id, "watchlist");
-  return (
-    <RailSection
-      title={ctx.t("home.continueWatchlist")}
-      movies={items.slice(0, 20).map((i) => fromSnapshot(i.snapshot))}
-      href="/library"
-      {...ctx}
-    />
-  );
+async function WatchlistRail({ user, ...ctx }: Ctx & { user: User }) {
+  const items = getList(user.id, "watchlist").slice(0, 20);
+  const movies = await withFreshData(items.map((i) => i.snapshot), ctx.locale, (fresh) => refreshListSnapshots(user.id, fresh));
+  return <RailSection title={ctx.t("home.continueWatchlist")} movies={movies} href="/library" {...ctx} />;
 }
 
 function PersonalizeCta({ t }: { t: TFunction }) {

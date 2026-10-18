@@ -1,13 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Manrope, Unbounded } from "next/font/google";
-import { DataNotice } from "@/components/data-notice";
 import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 import { I18nProvider } from "@/components/i18n-provider";
 import { ListStateProvider } from "@/components/list-state";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getAllMemberIds } from "@/lib/db/lists";
-import { isTmdbConfigured } from "@/lib/env";
 import { getT } from "@/lib/i18n/server";
 import "./globals.css";
 
@@ -53,7 +51,6 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             >
               {t("nav.skip")}
             </a>
-            {!isTmdbConfigured() ? <DataNotice notice="unconfigured" t={t} /> : null}
             <Header user={user ? { name: user.name, role: user.role } : null} />
             <main id="main" className="w-full min-w-0 flex-1">
               {children}

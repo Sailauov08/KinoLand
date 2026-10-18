@@ -4,10 +4,9 @@ import { FilmIcon } from "@/components/icons";
 import { MovieCard, MovieGrid } from "@/components/movie-card";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getCollectionBySlug, getCollectionItems, localized } from "@/lib/db/collections";
+import { getCollectionBySlug, getCollectionItems, localized, refreshCollectionSnapshots } from "@/lib/db/collections";
 import { getT } from "@/lib/i18n/server";
-import { getMovieSummaries } from "@/lib/movies/service";
-import { fromSnapshot } from "@/lib/movies/types";
+import { withFreshData } from "@/lib/movies/fresh";
 
 async function load(slug: string) {
   const c = getCollectionBySlug(slug);
@@ -30,8 +29,7 @@ export default async function CollectionPage({ params }: PageProps<"/collections
   const c = await load((await params).slug);
   const { locale, t } = await getT();
   const items = getCollectionItems(c.id);
-  const fresh = await getMovieSummaries(items.map((i) => i.movieId), locale);
-  const movies = items.map((i) => fresh.data.get(i.movieId) ?? fromSnapshot(i.snapshot));
+  const movies = await withFreshData(items.map((i) => i.snapshot), locale, (fresh) => refreshCollectionSnapshots(c.id, fresh));
 
   return (
     <div className="container-page">
@@ -42,8 +40,8 @@ export default async function CollectionPage({ params }: PageProps<"/collections
       />
       {movies.length ? (
         <MovieGrid>
-          {movies.map((m) => (
-            <MovieCard key={m.id} movie={m} locale={locale} t={t} demo={fresh.source === "demo"} />
+          {movies.map((m, i) => (
+            <MovieCard key={m.id} movie={m} locale={locale} priority={i < 6} />
           ))}
         </MovieGrid>
       ) : (

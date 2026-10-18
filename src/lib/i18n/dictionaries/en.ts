@@ -20,11 +20,17 @@ export const en = {
   "nav.account": "Account",
   "nav.quickSearch": "Search films…",
 
-  "data.demoUnconfigured": "Demo mode: showing an offline sample catalogue without ratings or posters. Add a TMDB API key to enable live data.",
-  "data.demoUnavailable": "Live data is temporarily unavailable — showing the offline demo catalogue.",
-  "data.demoBadge": "Demo data",
-  "data.demoArtwork": "Demo artwork",
   "data.noRating": "No rating",
+
+  "setup.title": "Connect TMDB to load movies",
+  "setup.text": "KINO shows real film data from The Movie Database. Add your TMDB API Read Access Token to .env.local in the project root, then restart the dev server.",
+  "setup.link": "Get a free TMDB API key",
+  "setup.devOnly": "This setup note is only shown in development.",
+  "unavailable.title": "Movies are unavailable right now",
+  "unavailable.text": "We couldn’t reach our movie database. Please try again in a moment.",
+  "admin.tmdbStatus": "TMDB connection",
+  "admin.tmdbOk": "Connected — live data",
+  "admin.tmdbMissing": "Not configured. Add TMDB_READ_ACCESS_TOKEN to .env.local and restart.",
 
   "home.trending": "Trending this week",
   "home.topRated": "Highest rated",
@@ -59,7 +65,6 @@ export const en = {
   "movie.trailer": "Trailer",
   "movie.playTrailer": "Play trailer",
   "movie.noTrailer": "No official trailer is available for this title.",
-  "movie.noTrailerDemo": "Trailers are loaded from TMDB's official video listings when live data is enabled.",
   "movie.trailerConsent": "Plays from YouTube (privacy-enhanced mode).",
   "movie.similar": "More like this",
   "movie.noOverview": "No synopsis is available in this language yet.",
@@ -88,8 +93,7 @@ export const en = {
   "list.addedOn": "Added {date}",
 
   "top.title": "Top 100",
-  "top.subtitle": "The hundred highest-rated films by the TMDB community.",
-  "top.subtitleDemo": "Demo selection — rankings require live TMDB data, so titles are shown in curated order.",
+  "top.subtitle": "The hundred highest-rated films by the TMDB community, among titles with at least 3,000 votes.",
   "top.showing": "Showing {shown} of {total}",
   "top.rank": "Rank",
 

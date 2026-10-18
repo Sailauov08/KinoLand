@@ -5,10 +5,9 @@ import { BookmarkIcon, HeartIcon } from "@/components/icons";
 import { MovieCard, MovieGrid } from "@/components/movie-card";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/auth/session";
-import { getList, type ListName } from "@/lib/db/lists";
+import { getList, refreshListSnapshots, type ListName } from "@/lib/db/lists";
 import { getT } from "@/lib/i18n/server";
-import { getMovieSummaries } from "@/lib/movies/service";
-import { fromSnapshot } from "@/lib/movies/types";
+import { withFreshData } from "@/lib/movies/fresh";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getT();
@@ -24,12 +23,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
   const favCount = getList(user.id, "favorite").length;
   const items = getList(user.id, tab);
 
-  // Refresh titles in the current UI language; stored snapshots are the fallback.
-  const fresh = await getMovieSummaries(items.map((i) => i.movieId), locale);
-  const movies = items.map((i) => {
-    const live = fresh.data.get(i.movieId);
-    return live ? { ...live, posterPath: live.posterPath ?? i.snapshot.posterPath } : fromSnapshot(i.snapshot);
-  });
+  const movies = await withFreshData(items.map((i) => i.snapshot), locale, (fresh) => refreshListSnapshots(user.id, fresh));
 
   const tabs = [
     { key: "watchlist" as const, href: "/library", label: t("list.watchlist"), count: watchCount, icon: <BookmarkIcon size={16} /> },
@@ -60,7 +54,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
       {movies.length ? (
         <MovieGrid>
           {movies.map((m) => (
-            <MovieCard key={m.id} movie={m} locale={locale} t={t} demo={fresh.source === "demo"} />
+            <MovieCard key={m.id} movie={m} locale={locale} />
           ))}
         </MovieGrid>
       ) : (

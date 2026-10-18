@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { DataNotice } from "@/components/data-notice";
+import { MoviesUnavailable } from "@/components/movies-unavailable";
 import { ExternalIcon, FilmIcon, PlayIcon } from "@/components/icons";
 import { ListButtons } from "@/components/list-buttons";
 import { MovieCard } from "@/components/movie-card";
@@ -10,26 +10,36 @@ import { MovieRail } from "@/components/movie-rail";
 import { BackdropImage, PosterImage } from "@/components/poster";
 import { RatingPill } from "@/components/rating";
 import { TrailerPlayer } from "@/components/trailer";
-import { Badge, buttonClass, SectionHeader } from "@/components/ui";
+import { buttonClass, SectionHeader } from "@/components/ui";
 import { formatNumber, formatRuntime } from "@/lib/format";
 import { getT } from "@/lib/i18n/server";
 import { genreName, languageLabel } from "@/lib/movies/genres";
 import { tmdbImage } from "@/lib/movies/images";
 import { getMovie } from "@/lib/movies/service";
 import { movieIdSchema } from "@/lib/validation";
+import type { Locale } from "@/lib/i18n/config";
+import type { TFunction } from "@/lib/i18n/translate";
+import type { MovieDetails, UnavailableReason } from "@/lib/movies/types";
 
-async function load(params: Promise<{ id: string }>) {
+type Loaded =
+  | { kind: "ok"; movie: MovieDetails; locale: Locale; t: TFunction }
+  | { kind: "unavailable"; reason: UnavailableReason; locale: Locale; t: TFunction };
+
+async function load(params: Promise<{ id: string }>): Promise<Loaded> {
   const { id } = await params;
   const parsed = movieIdSchema.safeParse(id);
   if (!parsed.success) notFound();
   const { locale, t } = await getT();
   const res = await getMovie(parsed.data, locale);
+  if (!res.ok) return { kind: "unavailable", reason: res.reason, locale, t };
   if (!res.data) notFound();
-  return { movie: res.data, source: res.source, notice: res.notice, locale, t };
+  return { kind: "ok", movie: res.data, locale, t };
 }
 
 export async function generateMetadata({ params }: PageProps<"/movie/[id]">): Promise<Metadata> {
-  const { movie } = await load(params);
+  const loaded = await load(params);
+  if (loaded.kind !== "ok") return {};
+  const { movie } = loaded;
   const poster = tmdbImage(movie.posterPath, "w500");
   return {
     title: movie.year ? `${movie.title} (${movie.year})` : movie.title,
@@ -39,8 +49,10 @@ export async function generateMetadata({ params }: PageProps<"/movie/[id]">): Pr
 }
 
 export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
-  const { movie, source, notice, locale, t } = await load(params);
-  const demo = source === "demo";
+  const loaded = await load(params);
+  const { locale, t } = loaded;
+  if (loaded.kind !== "ok") return <MoviesUnavailable reason={loaded.reason} t={t} className="container-page pt-10" />;
+  const { movie } = loaded;
   const runtime = formatRuntime(movie.runtime, t);
 
   const facts: { label: string; value: React.ReactNode }[] = [
@@ -56,7 +68,7 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
       {/* Backdrop */}
       <section className="relative -mt-16 overflow-hidden">
         <div className="absolute inset-0 h-[70svh] min-h-[460px]">
-          <BackdropImage id={movie.id} title={movie.title} path={movie.backdropPath} size="original" priority className="opacity-60" />
+          <BackdropImage path={movie.backdropPath} fallbackPosterPath={movie.posterPath} priority className="opacity-60" />
           <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/60 to-ink/20" />
           <div className="absolute inset-0 bg-gradient-to-r from-ink/90 via-ink/30 to-transparent" />
         </div>
@@ -64,14 +76,11 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
         <div className="container-page relative grid gap-8 pt-28 pb-6 md:grid-cols-[minmax(0,260px)_1fr] md:gap-12 md:pt-40 lg:grid-cols-[300px_1fr]">
           <div className="mx-auto w-48 animate-fade-up sm:w-56 md:mx-0 md:w-full">
             <PosterImage
-              id={movie.id}
               title={movie.title}
               year={movie.year}
               path={movie.posterPath}
-              size="w500"
               sizes="(min-width: 1024px) 300px, (min-width: 768px) 260px, 224px"
               priority
-              demoLabel={demo ? t("data.demoArtwork") : undefined}
               className="rounded-3xl shadow-[0_40px_80px_-30px_rgba(0,0,0,0.9)] ring-1 ring-white/10"
             />
           </div>
@@ -86,7 +95,6 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
                   </Link>
                 ) : null;
               })}
-              {demo ? <Badge tone="accent">{t("data.demoBadge")}</Badge> : null}
             </div>
             <h1 className="mt-4 font-display text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl lg:text-5xl">
               {movie.title}
@@ -119,7 +127,6 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
               <ListButtons movieId={movie.id} />
             </div>
 
-            <DataNotice notice={notice} t={t} inline />
           </div>
         </div>
       </section>
@@ -138,7 +145,7 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
             ) : (
               <div className="flex items-center gap-4 rounded-3xl bg-surface p-6 text-sm text-muted ring-1 ring-line">
                 <FilmIcon className="shrink-0 text-subtle" size={28} />
-                {demo ? t("movie.noTrailerDemo") : t("movie.noTrailer")}
+                {t("movie.noTrailer")}
               </div>
             )}
           </section>
@@ -204,7 +211,7 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
           <SectionHeader title={t("movie.similar")} />
           <MovieRail label={t("movie.similar")}>
             {movie.recommendations.map((m) => (
-              <MovieCard key={m.id} movie={m} locale={locale} t={t} demo={demo} />
+              <MovieCard key={m.id} movie={m} locale={locale} />
             ))}
           </MovieRail>
         </section>

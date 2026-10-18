@@ -24,7 +24,6 @@ export function TrailerPlayer({ videoKey, title }: { videoKey: string; title: st
           title={`${t("movie.trailer")}: ${title}`}
           allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
           referrerPolicy="strict-origin-when-cross-origin"
-          allowFullScreen
         />
       ) : (
         <button

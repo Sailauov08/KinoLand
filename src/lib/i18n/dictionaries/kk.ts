@@ -22,11 +22,17 @@ export const kk: Dictionary = {
   "nav.account": "Аккаунт",
   "nav.quickSearch": "Фильм іздеу…",
 
-  "data.demoUnconfigured": "Демо режим: рейтингсіз және постерсіз офлайн каталог көрсетілген. Тірі деректерді қосу үшін TMDB API кілтін енгізіңіз.",
-  "data.demoUnavailable": "Тірі деректер уақытша қолжетімсіз — офлайн демо каталог көрсетілген.",
-  "data.demoBadge": "Демо деректер",
-  "data.demoArtwork": "Демо мұқаба",
   "data.noRating": "Рейтинг жоқ",
+
+  "setup.title": "Фильмдерді жүктеу үшін TMDB-ні қосыңыз",
+  "setup.text": "KINO The Movie Database-тегі нақты фильм деректерін көрсетеді. TMDB API Read Access Token кілтін жоба түбіріндегі .env.local файлына қосып, dev-серверді қайта іске қосыңыз.",
+  "setup.link": "Тегін TMDB API кілтін алу",
+  "setup.devOnly": "Бұл нұсқаулық тек әзірлеу режимінде көрсетіледі.",
+  "unavailable.title": "Фильмдер қазір қолжетімсіз",
+  "unavailable.text": "Фильмдер базасына қосылу мүмкін болмады. Сәлден соң қайталап көріңіз.",
+  "admin.tmdbStatus": "TMDB қосылымы",
+  "admin.tmdbOk": "Қосылған — тірі деректер",
+  "admin.tmdbMissing": "Бапталмаған. .env.local файлына TMDB_READ_ACCESS_TOKEN қосып, серверді қайта іске қосыңыз.",
 
   "home.trending": "Осы аптаның трендтері",
   "home.topRated": "Ең жоғары рейтинг",
@@ -61,7 +67,6 @@ export const kk: Dictionary = {
   "movie.trailer": "Трейлер",
   "movie.playTrailer": "Трейлерді қосу",
   "movie.noTrailer": "Бұл фильмнің ресми трейлері қолжетімсіз.",
-  "movie.noTrailerDemo": "Тірі деректер қосылғанда трейлерлер TMDB-нің ресми бейнелерінен жүктеледі.",
   "movie.trailerConsent": "YouTube-тан ойнатылады (құпиялылығы жоғары режим).",
   "movie.similar": "Ұқсас фильмдер",
   "movie.noOverview": "Бұл тілде сипаттама әзірге жоқ.",
@@ -90,8 +95,7 @@ export const kk: Dictionary = {
   "list.addedOn": "Қосылды: {date}",
 
   "top.title": "Үздік 100",
-  "top.subtitle": "TMDB қауымдастығының бағалауы бойынша ең жоғары рейтингті жүз фильм.",
-  "top.subtitleDemo": "Демо іріктеме — рейтинг үшін TMDB тірі деректері қажет, сондықтан фильмдер редакция ретімен көрсетілген.",
+  "top.subtitle": "TMDB қауымдастығының бағалауы бойынша ең жоғары рейтингті жүз фильм — кемінде 3 000 дауыс жинаған фильмдер арасында.",
   "top.showing": "{total} ішінен {shown} көрсетілді",
   "top.rank": "Орны",
 

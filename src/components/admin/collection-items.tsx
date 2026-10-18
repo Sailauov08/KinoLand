@@ -58,7 +58,7 @@ export function CollectionItems({ collectionId, items }: { collectionId: number;
           {results?.length === 0 ? <li className="text-sm text-muted">{t("search.noResults")}</li> : null}
           {results?.map((m) => (
             <li key={m.id} className="flex items-center gap-3 rounded-2xl bg-surface p-2 ring-1 ring-line">
-              <PosterImage id={m.id} title={m.title} year={m.year} path={m.posterPath} size="w185" sizes="40px" thumb className="w-10 shrink-0 rounded-md" />
+              <PosterImage title={m.title} year={m.year} path={m.posterPath} sizes="40px" thumb className="w-10 shrink-0 rounded-md" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{m.title}</p>
                 <p className="text-xs text-subtle">{m.year ?? "—"} · #{m.id}</p>
@@ -86,7 +86,7 @@ export function CollectionItems({ collectionId, items }: { collectionId: number;
             {items.map((m, i) => (
               <li key={m.id} className="flex items-center gap-3 rounded-2xl bg-surface p-2 ring-1 ring-line">
                 <span className="w-6 text-center text-xs text-subtle tabular-nums">{i + 1}</span>
-                <PosterImage id={m.id} title={m.title} year={m.year} path={m.posterPath} size="w185" sizes="40px" thumb className="w-10 shrink-0 rounded-md" />
+                <PosterImage title={m.title} year={m.year} path={m.posterPath} sizes="40px" thumb className="w-10 shrink-0 rounded-md" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{m.title}</p>
                   <p className="text-xs text-subtle">{m.year ?? "—"}</p>
