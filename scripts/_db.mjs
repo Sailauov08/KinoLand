@@ -4,14 +4,37 @@ import { MIGRATIONS, SCHEMA } from "../src/lib/db/schema.ts";
 export async function connect() {
   const url = process.env.DATABASE_URL?.trim();
   if (url) {
-    const { default: postgres } = await import("postgres");
-    const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {}, types: { bigint: { to: 20, from: [20], serialize: String, parse: Number } } });
-    const wrap = (s) => ({
-      query: (text, params = []) => s.unsafe(text, params),
-      exec: (text) => s.unsafe(text).simple(),
-      transaction: (fn) => (s.begin ? s.begin((tx) => fn(wrap(tx))) : fn(wrap(s))),
-    });
-    return { db: wrap(sql), target: "DATABASE_URL (PostgreSQL)", close: () => sql.end() };
+    const pg = (await import("pg")).default;
+    pg.types.setTypeParser(20, (v) => Number(v));
+    const u = new URL(url);
+    const wantsSsl = u.searchParams.get("sslmode") !== "disable";
+    for (const p of ["sslmode", "sslcert", "sslkey", "sslrootcert", "uselibpqcompat"]) u.searchParams.delete(p);
+    const ca = process.env.DATABASE_CA_CERT?.replace(/\\n/g, "\n");
+    const client = new pg.Client({ connectionString: u.toString(), ssl: wantsSsl ? (ca ? { ca, rejectUnauthorized: true } : { rejectUnauthorized: false }) : false });
+    await client.connect();
+    let inTx = false;
+    const db = {
+      query: async (text, params = []) => (await client.query(text, params)).rows,
+      exec: async (text) => {
+        await client.query(text);
+      },
+      transaction: async (fn) => {
+        if (inTx) return fn(db);
+        inTx = true;
+        await client.query("BEGIN");
+        try {
+          const r = await fn(db);
+          await client.query("COMMIT");
+          return r;
+        } catch (e) {
+          await client.query("ROLLBACK").catch(() => {});
+          throw e;
+        } finally {
+          inTx = false;
+        }
+      },
+    };
+    return { db, target: "DATABASE_URL (PostgreSQL)", close: () => client.end() };
   }
   const { PGlite } = await import("@electric-sql/pglite");
   const dir = process.env.EMBEDDED_DB_DIR?.trim() || "data/pglite";

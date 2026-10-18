@@ -3,7 +3,7 @@ import { env } from "@/lib/env";
 import { MIGRATIONS, SCHEMA } from "./schema";
 
 /**
- * Database access. Production uses PostgreSQL (Supabase) through `postgres` (postgres.js) with
+ * Database access. Production uses PostgreSQL (Supabase) through node-postgres (`pg`) with
  * DATABASE_URL. Without DATABASE_URL — local development and tests — an embedded PGlite database
  * (real Postgres compiled to WASM) is used, so the same SQL runs everywhere.
  */
@@ -19,32 +19,58 @@ export interface Db {
 type Global = { kinolandDb?: Promise<Db> };
 const g = globalThis as unknown as Global;
 
-async function createPostgres(url: string): Promise<Db> {
-  const { default: postgres } = await import("postgres");
-  const sql = postgres(url, {
-    // Supabase's transaction pooler (port 6543) does not support prepared statements.
-    prepare: false,
-    max: env.isProduction ? 3 : 5,
-    idle_timeout: 20,
-    connect_timeout: 10,
-    // BIGINT/COUNT come back as numbers (all values here stay far below 2^53).
-    types: { bigint: { to: 20, from: [20], serialize: (x: number) => String(x), parse: (x: string) => Number(x) } },
-    onnotice: () => {},
-  });
-  // Minimal structural view of postgres.js (its generic typings are awkward to thread through).
-  type Conn = {
-    unsafe: (text: string, params?: unknown[]) => Promise<unknown> & { simple: () => Promise<unknown> };
-    begin?: (fn: (tx: Conn) => Promise<unknown>) => Promise<unknown>;
+/**
+ * TLS options for node-postgres. The connection is always encrypted; the server certificate is
+ * verified when DATABASE_CA_CERT (Supabase → Database settings → SSL certificate) is provided,
+ * otherwise it behaves like libpq's sslmode=require (encrypt without verification).
+ */
+export function pgConnectionConfig(url: string, caCert?: string) {
+  const u = new URL(url);
+  const wantsSsl = u.searchParams.has("sslmode") ? u.searchParams.get("sslmode") !== "disable" : !/^(localhost|127\.0\.0\.1)$/.test(u.hostname);
+  for (const p of ["sslmode", "sslcert", "sslkey", "sslrootcert", "uselibpqcompat"]) u.searchParams.delete(p);
+  return {
+    connectionString: u.toString(),
+    ssl: wantsSsl ? (caCert ? { ca: caCert, rejectUnauthorized: true } : { rejectUnauthorized: false }) : false,
   };
-  const wrap = (s: Conn): Db => ({
-    query: async <T,>(text: string, params: unknown[] = []) => (await s.unsafe(text, params)) as T[],
-    exec: async (text: string) => {
-      await s.unsafe(text).simple();
-    },
-    transaction: async <T,>(fn: (tx: Db) => Promise<T>) =>
-      s.begin ? ((await s.begin((tx) => fn(wrap(tx)))) as T) : fn(wrap(s)), // nested: already in a transaction
+}
+
+async function createPostgres(url: string): Promise<Db> {
+  // node-postgres runs one query per connection at a time (no pipelining), which is what
+  // Supabase's transaction pooler (Supavisor, port 6543) requires.
+  const pg = await import("pg");
+  pg.types.setTypeParser(20, (v: string) => Number(v)); // BIGINT/COUNT → number (values stay < 2^53)
+  const pool = new pg.Pool({
+    ...pgConnectionConfig(url, env.databaseCaCert),
+    max: env.isProduction ? 3 : 5,
+    idleTimeoutMillis: 20_000,
+    connectionTimeoutMillis: 15_000,
   });
-  return wrap(sql as unknown as Conn);
+  pool.on("error", () => {}); // idle-client errors are surfaced on the next query instead of crashing
+
+  type Client = { query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }> };
+  const wrap = (c: Client, inTx: boolean): Db => ({
+    query: async <T,>(text: string, params: unknown[] = []) => (await c.query(text, params)).rows as T[],
+    // Without parameters node-postgres uses the simple protocol, which allows multiple statements.
+    exec: async (text: string) => {
+      await c.query(text);
+    },
+    transaction: async <T,>(fn: (tx: Db) => Promise<T>): Promise<T> => {
+      if (inTx) return fn(wrap(c, true));
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const result = await fn(wrap(client, true));
+        await client.query("COMMIT");
+        return result;
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+  });
+  return wrap(pool, false);
 }
 
 async function createPglite(dataDir: string | undefined): Promise<Db> {

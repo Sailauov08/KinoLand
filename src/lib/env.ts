@@ -6,6 +6,8 @@ const envSchema = z.object({
   TMDB_API_KEY: z.string().trim().optional(),
   // PostgreSQL connection string (Supabase). Required in production.
   DATABASE_URL: z.string().trim().optional(),
+  // Optional PEM CA certificate to verify the database server certificate (Supabase → SSL certificate).
+  DATABASE_CA_CERT: z.string().trim().optional(),
   // Embedded PGlite database used when DATABASE_URL is unset (local dev/tests): a directory or "memory".
   EMBEDDED_DB_DIR: z.string().trim().optional(),
   ALLOW_EMBEDDED_DB: z.string().trim().optional(),
@@ -37,6 +39,8 @@ export const env = {
   tmdbToken: parsed.TMDB_READ_ACCESS_TOKEN || undefined,
   tmdbApiKey: parsed.TMDB_API_KEY || undefined,
   databaseUrl: parsed.DATABASE_URL || undefined,
+  // Env vars often store PEM certificates with literal "\n" sequences; turn them back into newlines.
+  databaseCaCert: parsed.DATABASE_CA_CERT?.replace(/\\n/g, "\n") || undefined,
   embeddedDbDir: parsed.EMBEDDED_DB_DIR === "memory" ? undefined : parsed.EMBEDDED_DB_DIR || "data/pglite",
   allowEmbeddedDb: parsed.ALLOW_EMBEDDED_DB === "1",
   appTimezone: validTimeZone(parsed.APP_TIMEZONE) ?? "Asia/Almaty",

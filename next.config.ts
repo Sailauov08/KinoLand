@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   // classic caching model is used; TMDB responses are cached via fetch revalidation.
   cacheComponents: false,
   // Loaded at runtime from node_modules (PGlite ships a WASM build of Postgres).
-  serverExternalPackages: ["@electric-sql/pglite", "postgres"],
+  serverExternalPackages: ["@electric-sql/pglite", "pg"],
   images: {
     // TMDB serves pre-sized artwork from its CDN; the loader picks the right size per srcset width.
     loader: "custom",

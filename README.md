@@ -30,6 +30,7 @@ automatically on first use; you can also run `npm run db:migrate`.
 | `POSTHOG_PROJECT_API_KEY`, `POSTHOG_HOST` | optional | Forward consented events to PostHog (server-side) |
 | `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | optional | Show PostHog numbers in `/admin/analytics` (server-only) |
 | `DATABASE_URL` | production | Supabase Postgres connection string (Transaction pooler, port 6543) |
+| `DATABASE_CA_CERT` | optional | Supabase CA certificate (PEM) to verify the DB server certificate |
 | `APP_TIMEZONE` | optional | Time zone for daily statistics (default `Asia/Almaty`) |
 
 ## Administrator access
@@ -137,6 +138,9 @@ To inspect users safely (no hashes), use **Admin → Users**, or the Supabase Ta
 5. **First admin:** register on the live site, then run locally (with the production `DATABASE_URL`):
    `npm run admin:promote -- you@example.com`.
 
+The app uses node-postgres (`pg`), which sends one query per connection at a time. That matters
+because Supabase's transaction pooler stalls on pipelined queries.
+
 Notes: in-memory caches (TMDB circuit breaker, hidden-movie cache, analytics event rate limit) are
 per serverless instance, which is fine for this use. Login and registration limits are stored in
 Postgres.
@@ -164,7 +168,7 @@ src/
     admin/             Dashboard queries, date ranges, health checks, PostHog query client
     analytics/         Privacy rules (sanitize) and server-side tracking/forwarding
     auth/              scrypt passwords, DB sessions, rate limiting, admin API guard
-    db/                Postgres connection (postgres.js / PGlite), schema, repositories
+    db/                Postgres connection (node-postgres / PGlite), schema, repositories
     i18n/              en/ru/kk dictionaries (public + admin)
     movies/            TMDB client, schemas, live service, image loader
   proxy.ts             Fast 307 to /login for /admin, /library, /profile without a session
