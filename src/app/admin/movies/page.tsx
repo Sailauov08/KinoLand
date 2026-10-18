@@ -19,7 +19,7 @@ export default async function AdminMoviesPage({ searchParams }: PageProps<"/admi
   await requireAdmin("/admin/movies");
   const { at, locale } = await getAdminT();
   const range = parseRange((await searchParams).range);
-  const d = movieAnalyticsData(range);
+  const d = await movieAnalyticsData(range);
   const tag = localeTags[locale];
   const movieItems = (list: { movieId: number; title: string; count: number }[]) =>
     list.map((m) => ({ key: m.movieId, label: m.title, value: m.count, href: `/movie/${m.movieId}` }));

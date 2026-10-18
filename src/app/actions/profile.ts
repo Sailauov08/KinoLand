@@ -16,7 +16,7 @@ export async function setLocaleAction(locale: unknown) {
   if (!isLocale(locale)) return;
   (await cookies()).set(LOCALE_COOKIE, locale, LOCALE_COOKIE_OPTS);
   const user = await getCurrentUser();
-  if (user) updateUserLocale(user.id, locale);
+  if (user) await updateUserLocale(user.id, locale);
   revalidatePath("/", "layout");
 }
 
@@ -29,7 +29,7 @@ export async function updateProfileAction(_prev: FormState, formData: FormData):
     genres: formData.getAll("genres"),
   });
   if (!parsed.success) return { error: "auth.invalidInput", fields: fieldErrors(parsed.error) };
-  updateUserProfile(user.id, { name: parsed.data.name, preferredGenres: parsed.data.genres, locale: parsed.data.locale });
+  await updateUserProfile(user.id, { name: parsed.data.name, preferredGenres: parsed.data.genres, locale: parsed.data.locale });
   (await cookies()).set(LOCALE_COOKIE, parsed.data.locale, LOCALE_COOKIE_OPTS);
   revalidatePath("/", "layout");
   return { ok: true, message: "profile.saved" };
@@ -40,11 +40,11 @@ export async function changePasswordAction(_prev: FormState, formData: FormData)
   if (!user) return { error: "list.signInToSave" };
   const parsed = changePasswordSchema.safeParse({ current: formData.get("current"), next: formData.get("next") });
   if (!parsed.success) return { error: "auth.invalidInput", fields: fieldErrors(parsed.error) };
-  const stored = getPasswordHash(user.id);
+  const stored = await getPasswordHash(user.id);
   if (!stored || !(await verifyPassword(parsed.data.current, stored))) {
     return { error: "profile.wrongPassword", fields: { current: true } };
   }
-  updatePasswordHash(user.id, await hashPassword(parsed.data.next));
+  await updatePasswordHash(user.id, await hashPassword(parsed.data.next));
   await revokeOtherSessions(user.id);
   return { ok: true, message: "profile.passwordUpdated" };
 }

@@ -13,12 +13,12 @@ const query = z.object({
 });
 
 /** GET /api/admin/users — paginated accounts with safe fields only (no hashes, no tokens). */
-export function GET(req: NextRequest) {
-  const guard = requireAdminApi(req);
+export async function GET(req: NextRequest) {
+  const guard = await requireAdminApi(req);
   if ("response" in guard) return guard.response;
   const sp = req.nextUrl.searchParams;
   const f = query.parse({ q: sp.get("q") ?? "", role: sp.get("role"), status: sp.get("status"), sort: sp.get("sort"), page: sp.get("page"), perPage: sp.get("perPage") });
-  const res = listUsersPaged({ query: f.q, role: f.role, status: f.status, sort: f.sort, page: f.page, perPage: f.perPage });
+  const res = await listUsersPaged({ query: f.q, role: f.role, status: f.status, sort: f.sort, page: f.page, perPage: f.perPage });
   return NextResponse.json(
     {
       ...res,

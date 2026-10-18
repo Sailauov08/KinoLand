@@ -20,9 +20,9 @@ export default async function AdminContentPage() {
   await requireAdmin("/admin/content");
   const { at, locale } = await getAdminT();
   const tag = localeTags[locale];
-  const banners = listBanners();
-  const hidden = listHiddenMovies();
-  const providers = listProviderLinks();
+  const banners = await listBanners();
+  const hidden = await listHiddenMovies();
+  const providers = await listProviderLinks();
   // Real TMDB titles for display (hidden films are fetched by id; failures fall back to the id).
   const ids = [...new Set([...banners.map((b) => b.movieId), ...providers.map((p) => p.movieId)])];
   const titles = await getMovieSummaries(ids, locale);
@@ -90,7 +90,7 @@ export default async function AdminContentPage() {
         </Panel>
 
         <Panel at={at} title={at("content.display")}>
-          <DisplaySettingsForm values={getDisplaySettings()} />
+          <DisplaySettingsForm values={await getDisplaySettings()} />
         </Panel>
       </div>
 

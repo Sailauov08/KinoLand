@@ -12,12 +12,12 @@ import { fromSnapshot, type MovieSnapshot, type MovieSummary } from "./types";
 export async function withFreshData(
   snapshots: MovieSnapshot[],
   locale: Locale,
-  persist?: (fresh: MovieSummary[]) => void,
+  persist?: (fresh: MovieSummary[]) => void | Promise<void>,
 ): Promise<MovieSummary[]> {
   if (!snapshots.length) return [];
   const res = await getMovieSummaries(snapshots.map((s) => s.id), locale);
   if (!res.ok) return snapshots.map(fromSnapshot);
   const fresh = [...res.data.values()];
-  if (persist && fresh.length) persist(fresh);
+  if (persist && fresh.length) await persist(fresh);
   return snapshots.map((s) => res.data.get(s.id) ?? fromSnapshot(s));
 }

@@ -16,7 +16,7 @@ export default async function AdminWatchlistsPage({ searchParams }: PageProps<"/
   await requireAdmin("/admin/watchlists");
   const { at, locale } = await getAdminT();
   const range = parseRange((await searchParams).range);
-  const d = watchlistData(range);
+  const d = await watchlistData(range);
   const tag = localeTags[locale];
   const fmt = (n: number) => n.toLocaleString(tag);
   const hasActivity = d.adds.some((p) => p.value) || d.removes.some((p) => p.value);

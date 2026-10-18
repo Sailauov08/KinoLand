@@ -35,7 +35,7 @@ export async function trackServer(type: EventType, data: { userId?: string; movi
     const h = await headers();
     const ua = h.get("user-agent");
     if (isBot(ua)) return;
-    recordEvent({ type, visitorHash: visitorHash(clientIp(h), ua ?? ""), userId: data.userId, movieId: data.movieId, props: data.props });
+    await recordEvent({ type, visitorHash: await visitorHash(clientIp(h), ua ?? ""), userId: data.userId, movieId: data.movieId, props: data.props });
     const jar = await cookies();
     if (jar.get(CONSENT_COOKIE)?.value === "granted") {
       await forwardToPosthog(type, jar.get(ANON_ID_COOKIE)?.value, { movie_id: data.movieId, ...data.props });

@@ -6,7 +6,7 @@ import { analyticsData } from "@/lib/admin/queries";
 import { fillDays, parseRange, rangeBounds } from "@/lib/admin/range";
 import { requireAdmin } from "@/lib/auth/session";
 import { EVENT_TYPES } from "@/lib/db/events";
-import { isPosthogConfigured } from "@/lib/env";
+import { env, isPosthogConfigured } from "@/lib/env";
 import { localeTags } from "@/lib/i18n/config";
 import { getAdminT } from "@/lib/i18n/server";
 
@@ -19,11 +19,11 @@ export default async function AdminAnalyticsPage({ searchParams }: PageProps<"/a
   await requireAdmin("/admin/analytics");
   const { at, locale } = await getAdminT();
   const range = parseRange((await searchParams).range);
-  const d = analyticsData(range);
+  const d = await analyticsData(range);
   const tag = localeTags[locale];
   const fmt = (n: number) => n.toLocaleString(tag);
   const ph = await posthogPageviews(d.range.days);
-  const { from, days } = rangeBounds(range);
+  const { from, days } = rangeBounds(range, env.appTimezone);
 
   return (
     <>
@@ -71,7 +71,7 @@ export default async function AdminAnalyticsPage({ searchParams }: PageProps<"/a
           <p className="text-sm text-danger">{at("analytics.posthogError")}</p>
         ) : (
           <>
-            <TimeSeriesChart locale={tag} label={at("analytics.posthogPageviews")} series={[{ label: at("analytics.posthogPageviews"), color: "#c4b5fd", points: fillDays(ph, from, days, (r) => r?.value ?? 0) }]} />
+            <TimeSeriesChart locale={tag} label={at("analytics.posthogPageviews")} series={[{ label: at("analytics.posthogPageviews"), color: "#c4b5fd", points: fillDays(ph, from, days, (r) => r?.value ?? 0, env.appTimezone) }]} />
             <p className="mt-3 text-xs text-subtle">{at("analytics.posthogConsent")}</p>
           </>
         )}

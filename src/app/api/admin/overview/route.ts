@@ -4,10 +4,10 @@ import { overviewData } from "@/lib/admin/queries";
 import { parseRange } from "@/lib/admin/range";
 
 /** GET /api/admin/overview?range=30d — dashboard aggregates (admins only). */
-export function GET(req: NextRequest) {
-  const guard = requireAdminApi(req);
+export async function GET(req: NextRequest) {
+  const guard = await requireAdminApi(req);
   if ("response" in guard) return guard.response;
-  const d = overviewData(parseRange(req.nextUrl.searchParams.get("range")));
+  const d = await overviewData(parseRange(req.nextUrl.searchParams.get("range")));
   return NextResponse.json(
     {
       range: d.range,

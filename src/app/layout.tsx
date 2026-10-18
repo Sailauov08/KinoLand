@@ -44,7 +44,7 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const [{ locale, t, dict }, user] = await Promise.all([getT(), getCurrentUser()]);
-  const members = user ? getAllMemberIds(user.id) : { watchlist: [], favorite: [] };
+  const members = user ? await getAllMemberIds(user.id) : { watchlist: [], favorite: [] };
 
   return (
     <html lang={locale} className={`${manrope.variable} ${unbounded.variable} antialiased`}>

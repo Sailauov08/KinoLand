@@ -238,7 +238,7 @@ export const adminKk: AdminDictionary = {
   "health.missing": "Жоқ",
   "health.noWarnings": "Ескерту жоқ.",
   "health.warn.tmdb": "TMDB бапталмаған немесе жауап бермейді — фильм беттерінде қолжетімсіздік туралы хабар көрсетіледі.",
-  "health.warn.sqlite": "Жергілікті дискідегі SQLite тек бір сервер данасын қолдайды. Serverless немесе бірнеше дана үшін тұрақты диск не PostgreSQL қолданыңыз.",
+  "health.warn.sqlite": "DATABASE_URL орнатылмаған: әзірлеуге арналған ендірілген дерекқор қолданылуда (data/pglite). Production үшін Supabase қосылу жолын көрсетіңіз.",
   "health.warn.posthog": "PostHog бапталмаған; тек өз аналитикамыз жиналады.",
   "health.warn.siteUrl": "NEXT_PUBLIC_SITE_URL орнатылмаған; Open Graph сілтемелері localhost-қа бағытталады.",
   "health.warn.errors": "Соңғы 24 сағатта тіркелген қателер саны: {n}.",

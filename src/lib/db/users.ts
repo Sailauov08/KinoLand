@@ -1,8 +1,10 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { env } from "@/lib/env";
 import { GENRE_IDS } from "@/lib/movies/genres";
 import { isLocale, type Locale } from "@/lib/i18n/config";
-import { getDb } from "./index";
+import { startOfDayInTz } from "@/lib/time";
+import { count, one, q } from "./index";
 
 export type Role = "user" | "admin";
 export type AccountStatus = "active" | "suspended";
@@ -26,20 +28,14 @@ interface UserRow {
   password_hash: string;
   role: Role;
   status: AccountStatus;
-  preferred_genres: string;
+  preferred_genres: unknown;
   locale: string | null;
   created_at: number;
   last_seen_at: number | null;
 }
 
-function parseGenres(json: string): number[] {
-  try {
-    const v: unknown = JSON.parse(json);
-    return Array.isArray(v) ? v.filter((g): g is number => typeof g === "number" && GENRE_IDS.has(g)) : [];
-  } catch {
-    return [];
-  }
-}
+const parseGenres = (v: unknown): number[] =>
+  Array.isArray(v) ? v.filter((g): g is number => typeof g === "number" && GENRE_IDS.has(g)) : [];
 
 const toUser = (r: UserRow): User => ({
   id: r.id,
@@ -49,67 +45,67 @@ const toUser = (r: UserRow): User => ({
   status: r.status ?? "active",
   preferredGenres: parseGenres(r.preferred_genres),
   locale: isLocale(r.locale) ? r.locale : null,
-  createdAt: r.created_at,
-  lastSeenAt: r.last_seen_at ?? null,
+  createdAt: Number(r.created_at),
+  lastSeenAt: r.last_seen_at === null ? null : Number(r.last_seen_at),
 });
 
-export function findUserByEmail(email: string): (User & { passwordHash: string }) | null {
-  const row = getDb().prepare("SELECT * FROM users WHERE email = ?").get(email.toLowerCase()) as UserRow | undefined;
+export async function findUserByEmail(email: string): Promise<(User & { passwordHash: string }) | null> {
+  const row = await one<UserRow>("SELECT * FROM kinoland.users WHERE email = $1", [email.toLowerCase()]);
   return row ? { ...toUser(row), passwordHash: row.password_hash } : null;
 }
 
-export function findUserById(id: string): User | null {
-  const row = getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;
+export async function findUserById(id: string): Promise<User | null> {
+  const row = await one<UserRow>("SELECT * FROM kinoland.users WHERE id = $1", [id]);
   return row ? toUser(row) : null;
 }
 
 /** New accounts are always regular users. Admins are designated only via the server-side CLI or by another admin. */
-export function createUser(input: { email: string; name: string; passwordHash: string; locale: Locale }): User {
+export async function createUser(input: { email: string; name: string; passwordHash: string; locale: Locale }): Promise<User> {
   const id = randomUUID();
-  getDb()
-    .prepare(
-      "INSERT INTO users (id, email, name, password_hash, role, status, preferred_genres, locale, created_at) VALUES (?, ?, ?, ?, 'user', 'active', '[]', ?, ?)",
-    )
-    .run(id, input.email.toLowerCase(), input.name, input.passwordHash, input.locale, Date.now());
-  return findUserById(id)!;
+  await q(
+    `INSERT INTO kinoland.users (id, email, name, password_hash, role, status, preferred_genres, locale, created_at)
+     VALUES ($1, $2, $3, $4, 'user', 'active', '[]'::jsonb, $5, $6)`,
+    [id, input.email.toLowerCase(), input.name, input.passwordHash, input.locale, Date.now()],
+  );
+  return (await findUserById(id))!;
 }
 
-export function updateUserProfile(id: string, data: { name: string; preferredGenres: number[]; locale: Locale }) {
-  getDb()
-    .prepare("UPDATE users SET name = ?, preferred_genres = ?, locale = ? WHERE id = ?")
-    .run(data.name, JSON.stringify(data.preferredGenres), data.locale, id);
+export async function updateUserProfile(id: string, data: { name: string; preferredGenres: number[]; locale: Locale }) {
+  await q("UPDATE kinoland.users SET name = $1, preferred_genres = $2::jsonb, locale = $3 WHERE id = $4", [
+    data.name,
+    JSON.stringify(data.preferredGenres),
+    data.locale,
+    id,
+  ]);
 }
 
-export function updateUserLocale(id: string, locale: Locale) {
-  getDb().prepare("UPDATE users SET locale = ? WHERE id = ?").run(locale, id);
+export async function updateUserLocale(id: string, locale: Locale) {
+  await q("UPDATE kinoland.users SET locale = $1 WHERE id = $2", [locale, id]);
 }
 
-export function updatePasswordHash(id: string, hash: string) {
-  getDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, id);
+export async function updatePasswordHash(id: string, hash: string) {
+  await q("UPDATE kinoland.users SET password_hash = $1 WHERE id = $2", [hash, id]);
 }
 
-export function getPasswordHash(id: string): string | null {
-  const row = getDb().prepare("SELECT password_hash FROM users WHERE id = ?").get(id) as { password_hash: string } | undefined;
-  return row?.password_hash ?? null;
+export async function getPasswordHash(id: string): Promise<string | null> {
+  return (await one<{ password_hash: string }>("SELECT password_hash FROM kinoland.users WHERE id = $1", [id]))?.password_hash ?? null;
 }
 
-export function setUserRole(id: string, role: Role) {
-  getDb().prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+export async function setUserRole(id: string, role: Role) {
+  await q("UPDATE kinoland.users SET role = $1 WHERE id = $2", [role, id]);
 }
 
-export function setUserStatus(id: string, status: AccountStatus) {
-  getDb().prepare("UPDATE users SET status = ? WHERE id = ?").run(status, id);
+export async function setUserStatus(id: string, status: AccountStatus) {
+  await q("UPDATE kinoland.users SET status = $1 WHERE id = $2", [status, id]);
 }
 
 /** Records activity at most once per 5 minutes per user to avoid a write on every request. */
-export function touchLastSeen(id: string, previous: number | null, now = Date.now()) {
+export async function touchLastSeen(id: string, previous: number | null, now = Date.now()) {
   if (previous && now - previous < 5 * 60_000) return;
-  getDb().prepare("UPDATE users SET last_seen_at = ? WHERE id = ?").run(now, id);
+  await q("UPDATE kinoland.users SET last_seen_at = $1 WHERE id = $2", [now, id]);
 }
 
-export function countActiveAdmins(): number {
-  return (getDb().prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active'").get() as { n: number }).n;
-}
+export const countActiveAdmins = () => count("SELECT COUNT(*)::int AS n FROM kinoland.users WHERE role = 'admin' AND status = 'active'");
 
 export interface UserListItem extends User {
   watchlistCount: number;
@@ -122,49 +118,49 @@ export type UserSort = (typeof USER_SORTS)[number];
 const SORT_SQL: Record<UserSort, string> = {
   newest: "u.created_at DESC",
   oldest: "u.created_at ASC",
-  name: "u.name COLLATE NOCASE ASC",
+  name: "lower(u.name) ASC",
   lastSeen: "COALESCE(u.last_seen_at, 0) DESC",
 };
 
-export function listUsersPaged(opts: {
+export async function listUsersPaged(opts: {
   query?: string;
   role?: Role | null;
   status?: AccountStatus | null;
   sort?: UserSort;
   page?: number;
   perPage?: number;
-}): { items: UserListItem[]; total: number; page: number; totalPages: number } {
+}): Promise<{ items: UserListItem[]; total: number; page: number; totalPages: number }> {
   const where: string[] = [];
-  const params: (string | number)[] = [];
+  const params: unknown[] = [];
   if (opts.query) {
     // LIKE wildcards in user input are escaped so a search can't match everything unexpectedly.
-    const q = `%${opts.query.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
-    where.push("(u.name LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\' OR u.id LIKE ? ESCAPE '\\')");
-    params.push(q, q, q);
+    params.push(`%${opts.query.replace(/[\\%_]/g, (c) => "\\" + c)}%`);
+    const p = `$${params.length}`;
+    where.push(`(u.name ILIKE ${p} OR u.email ILIKE ${p} OR u.id ILIKE ${p})`);
   }
   if (opts.role) {
-    where.push("u.role = ?");
     params.push(opts.role);
+    where.push(`u.role = $${params.length}`);
   }
   if (opts.status) {
-    where.push("u.status = ?");
     params.push(opts.status);
+    where.push(`u.status = $${params.length}`);
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const perPage = Math.min(Math.max(opts.perPage ?? 20, 1), 100);
-  const total = (getDb().prepare(`SELECT COUNT(*) AS n FROM users u ${whereSql}`).get(...params) as { n: number }).n;
+  const total = await count(`SELECT COUNT(*)::int AS n FROM kinoland.users u ${whereSql}`, params);
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const page = Math.min(Math.max(opts.page ?? 1, 1), totalPages);
-  const rows = getDb()
-    .prepare(
-      `SELECT u.*,
-        (SELECT COUNT(*) FROM list_items li WHERE li.user_id = u.id AND li.list = 'watchlist') AS watchlist_count,
-        (SELECT COUNT(*) FROM list_items li WHERE li.user_id = u.id AND li.list = 'favorite') AS favorite_count
-       FROM users u ${whereSql} ORDER BY ${SORT_SQL[opts.sort ?? "newest"]} LIMIT ? OFFSET ?`,
-    )
-    .all(...params, perPage, (page - 1) * perPage) as unknown as (UserRow & { watchlist_count: number; favorite_count: number })[];
+  const rows = await q<UserRow & { watchlist_count: number; favorite_count: number }>(
+    `SELECT u.*,
+       (SELECT COUNT(*)::int FROM kinoland.list_items li WHERE li.user_id = u.id AND li.list = 'watchlist') AS watchlist_count,
+       (SELECT COUNT(*)::int FROM kinoland.list_items li WHERE li.user_id = u.id AND li.list = 'favorite') AS favorite_count
+     FROM kinoland.users u ${whereSql} ORDER BY ${SORT_SQL[opts.sort ?? "newest"]}, u.id
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, perPage, (page - 1) * perPage],
+  );
   return {
-    items: rows.map((r) => ({ ...toUser(r), watchlistCount: r.watchlist_count, favoriteCount: r.favorite_count })),
+    items: rows.map((r) => ({ ...toUser(r), watchlistCount: Number(r.watchlist_count), favoriteCount: Number(r.favorite_count) })),
     total,
     page,
     totalPages,
@@ -180,40 +176,46 @@ export interface UserStats {
   activeLast7d: number;
 }
 
-export function getUserStats(now = Date.now()): UserStats {
-  const db = getDb();
-  const startOfDay = new Date(now);
-  startOfDay.setHours(0, 0, 0, 0);
-  const n = (sql: string, ...p: number[]) => (db.prepare(sql).get(...p) as { n: number }).n;
+export async function getUserStats(now = Date.now()): Promise<UserStats> {
+  const row = await one<Record<string, number>>(
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE role = 'admin')::int AS admins,
+            COUNT(*) FILTER (WHERE status = 'suspended')::int AS suspended,
+            COUNT(*) FILTER (WHERE created_at >= $1)::int AS new_today,
+            COUNT(*) FILTER (WHERE created_at >= $2)::int AS new_week,
+            COUNT(*) FILTER (WHERE last_seen_at >= $2)::int AS active_7d
+     FROM kinoland.users`,
+    [startOfDayInTz(now, env.appTimezone), now - 7 * 86_400_000],
+  );
   return {
-    total: n("SELECT COUNT(*) AS n FROM users"),
-    admins: n("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'"),
-    suspended: n("SELECT COUNT(*) AS n FROM users WHERE status = 'suspended'"),
-    newToday: n("SELECT COUNT(*) AS n FROM users WHERE created_at >= ?", startOfDay.getTime()),
-    newThisWeek: n("SELECT COUNT(*) AS n FROM users WHERE created_at >= ?", now - 7 * 86_400_000),
-    activeLast7d: n("SELECT COUNT(*) AS n FROM users WHERE last_seen_at >= ?", now - 7 * 86_400_000),
+    total: Number(row?.total ?? 0),
+    admins: Number(row?.admins ?? 0),
+    suspended: Number(row?.suspended ?? 0),
+    newToday: Number(row?.new_today ?? 0),
+    newThisWeek: Number(row?.new_week ?? 0),
+    activeLast7d: Number(row?.active_7d ?? 0),
   };
 }
 
-/** Registrations per day (local time) since `from`, for growth charts. */
-export function signupsByDay(from: number): { day: string; count: number }[] {
-  return getDb()
-    .prepare(
-      `SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', 'localtime') AS day, COUNT(*) AS count
-       FROM users WHERE created_at >= ? GROUP BY day ORDER BY day`,
-    )
-    .all(from) as unknown as { day: string; count: number }[];
+/** SQL expression for the calendar day of an epoch-ms column in the app time zone. */
+export const DAY_SQL = (col: string, tzParam: string) => `to_char(to_timestamp(${col} / 1000.0) AT TIME ZONE ${tzParam}, 'YYYY-MM-DD')`;
+
+/** Registrations per day since `from`, for growth charts. */
+export function signupsByDay(from: number): Promise<{ day: string; count: number }[]> {
+  return q(
+    `SELECT ${DAY_SQL("created_at", "$2")} AS day, COUNT(*)::int AS count
+     FROM kinoland.users WHERE created_at >= $1 GROUP BY day ORDER BY day`,
+    [from, env.appTimezone],
+  );
 }
 
-export function countUsersBefore(ts: number): number {
-  return (getDb().prepare("SELECT COUNT(*) AS n FROM users WHERE created_at < ?").get(ts) as { n: number }).n;
-}
+export const countUsersBefore = (ts: number) => count("SELECT COUNT(*)::int AS n FROM kinoland.users WHERE created_at < $1", [ts]);
+export const countUsersSince = (ts: number) => count("SELECT COUNT(*)::int AS n FROM kinoland.users WHERE created_at >= $1", [ts]);
 
-export function countActiveSessions(userId: string, now = Date.now()): number {
-  return (getDb().prepare("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ? AND expires_at > ?").get(userId, now) as { n: number }).n;
-}
+export const countActiveSessions = (userId: string, now = Date.now()) =>
+  count("SELECT COUNT(*)::int AS n FROM kinoland.sessions WHERE user_id = $1 AND expires_at > $2", [userId, now]);
 
-export function listCounts(userId: string): { watchlist: number; favorite: number } {
-  const rows = getDb().prepare("SELECT list, COUNT(*) AS n FROM list_items WHERE user_id = ? GROUP BY list").all(userId) as unknown as { list: string; n: number }[];
+export async function listCounts(userId: string): Promise<{ watchlist: number; favorite: number }> {
+  const rows = await q<{ list: string; n: number }>("SELECT list, COUNT(*)::int AS n FROM kinoland.list_items WHERE user_id = $1 GROUP BY list", [userId]);
   return { watchlist: rows.find((r) => r.list === "watchlist")?.n ?? 0, favorite: rows.find((r) => r.list === "favorite")?.n ?? 0 };
 }

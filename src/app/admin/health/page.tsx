@@ -5,7 +5,7 @@ import { databaseHealth, integrationStatus, serverHealth, tmdbHealth } from "@/l
 import { errorTrend } from "@/lib/admin/queries";
 import { requireAdmin } from "@/lib/auth/session";
 import { countErrorsLast24h, recentErrors } from "@/lib/db/errors";
-import { env, isPosthogConfigured } from "@/lib/env";
+import { env, isDatabaseConfigured, isPosthogConfigured } from "@/lib/env";
 import { localeTags } from "@/lib/i18n/config";
 import { getAdminT } from "@/lib/i18n/server";
 
@@ -35,17 +35,17 @@ export default async function AdminHealthPage() {
   await requireAdmin("/admin/health");
   const { at, locale } = await getAdminT();
   const tag = localeTags[locale];
-  const db = databaseHealth();
+  const db = await databaseHealth();
   const tmdb = await tmdbHealth();
   const server = serverHealth();
   const integrations = integrationStatus();
-  const trend = errorTrend(14);
-  const errors24h = countErrorsLast24h();
-  const errors = recentErrors(15);
+  const trend = await errorTrend(14);
+  const errors24h = await countErrorsLast24h();
+  const errors = await recentErrors(15);
 
   const warnings: string[] = [];
   if (tmdb.ok !== true) warnings.push(at("health.warn.tmdb"));
-  warnings.push(at("health.warn.sqlite"));
+  if (!isDatabaseConfigured()) warnings.push(at("health.warn.sqlite"));
   if (!isPosthogConfigured()) warnings.push(at("health.warn.posthog"));
   if (!process.env.NEXT_PUBLIC_SITE_URL && env.isProduction) warnings.push(at("health.warn.siteUrl"));
   if (errors24h > 0) warnings.push(at("health.warn.errors", { n: errors24h }));

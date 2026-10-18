@@ -1,6 +1,6 @@
 import "server-only";
 import type { Locale } from "@/lib/i18n/config";
-import { getDb } from "./index";
+import { one, q } from "./index";
 
 /** KinoLand-owned editorial text. TMDB metadata itself is never stored or overridden here. */
 export interface LocalizedText {
@@ -11,13 +11,9 @@ export interface LocalizedText {
 
 export const localized = (t: LocalizedText, locale: Locale) => t[locale] || t.en || t.ru || t.kk || "";
 
-const parseText = (json: string | null): LocalizedText => {
-  try {
-    const v = JSON.parse(json ?? "{}") as LocalizedText;
-    return { en: v.en || undefined, ru: v.ru || undefined, kk: v.kk || undefined };
-  } catch {
-    return {};
-  }
+const asText = (v: unknown): LocalizedText => {
+  const o = (v && typeof v === "object" ? v : {}) as LocalizedText;
+  return { en: o.en || undefined, ru: o.ru || undefined, kk: o.kk || undefined };
 };
 
 /* ── Homepage banners (hero featured selections) ─────────────────────────── */
@@ -35,91 +31,87 @@ export interface Banner {
 interface BannerRow {
   id: number;
   movie_id: number;
-  headline: string;
-  description: string;
-  is_active: number;
+  headline: unknown;
+  description: unknown;
+  is_active: boolean;
   position: number;
   updated_at: number;
 }
 
 const toBanner = (r: BannerRow): Banner => ({
-  id: r.id,
+  id: Number(r.id),
   movieId: r.movie_id,
-  headline: parseText(r.headline),
-  description: parseText(r.description),
-  isActive: !!r.is_active,
+  headline: asText(r.headline),
+  description: asText(r.description),
+  isActive: Boolean(r.is_active),
   position: r.position,
-  updatedAt: r.updated_at,
+  updatedAt: Number(r.updated_at),
 });
 
-export function listBanners(activeOnly = false): Banner[] {
-  const rows = getDb()
-    .prepare(`SELECT * FROM banners ${activeOnly ? "WHERE is_active = 1" : ""} ORDER BY position ASC, id ASC`)
-    .all() as unknown as BannerRow[];
+export async function listBanners(activeOnly = false): Promise<Banner[]> {
+  const rows = await q<BannerRow>(`SELECT * FROM kinoland.banners ${activeOnly ? "WHERE is_active" : ""} ORDER BY position ASC, id ASC`);
   return rows.map(toBanner);
 }
 
 /** Active banners rotate once per day so returning visitors see variety. */
-export function bannerOfTheDay(now = Date.now()): Banner | null {
-  const banners = listBanners(true);
+export async function bannerOfTheDay(now = Date.now()): Promise<Banner | null> {
+  const banners = await listBanners(true);
   return banners.length ? banners[Math.floor(now / 86_400_000) % banners.length] : null;
 }
 
-export function getBanner(id: number): Banner | null {
-  const row = getDb().prepare("SELECT * FROM banners WHERE id = ?").get(id) as BannerRow | undefined;
+export async function getBanner(id: number): Promise<Banner | null> {
+  const row = await one<BannerRow>("SELECT * FROM kinoland.banners WHERE id = $1", [id]);
   return row ? toBanner(row) : null;
 }
 
-export function saveBanner(input: { id?: number; movieId: number; headline: LocalizedText; description: LocalizedText; isActive: boolean; position: number }): number {
+export async function saveBanner(input: { id?: number; movieId: number; headline: LocalizedText; description: LocalizedText; isActive: boolean; position: number }): Promise<number> {
   const now = Date.now();
-  const db = getDb();
   if (input.id) {
-    db.prepare("UPDATE banners SET movie_id = ?, headline = ?, description = ?, is_active = ?, position = ?, updated_at = ? WHERE id = ?").run(
-      input.movieId,
-      JSON.stringify(input.headline),
-      JSON.stringify(input.description),
-      input.isActive ? 1 : 0,
-      input.position,
-      now,
-      input.id,
+    await q(
+      "UPDATE kinoland.banners SET movie_id = $1, headline = $2::jsonb, description = $3::jsonb, is_active = $4, position = $5, updated_at = $6 WHERE id = $7",
+      [input.movieId, JSON.stringify(input.headline), JSON.stringify(input.description), input.isActive, input.position, now, input.id],
     );
     return input.id;
   }
-  const res = db
-    .prepare("INSERT INTO banners (movie_id, headline, description, is_active, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(input.movieId, JSON.stringify(input.headline), JSON.stringify(input.description), input.isActive ? 1 : 0, input.position, now, now);
-  return Number(res.lastInsertRowid);
+  const row = await one<{ id: number }>(
+    `INSERT INTO kinoland.banners (movie_id, headline, description, is_active, position, created_at, updated_at)
+     VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, $6, $6) RETURNING id`,
+    [input.movieId, JSON.stringify(input.headline), JSON.stringify(input.description), input.isActive, input.position, now],
+  );
+  return Number(row!.id);
 }
 
-export function deleteBanner(id: number) {
-  getDb().prepare("DELETE FROM banners WHERE id = ?").run(id);
+export async function deleteBanner(id: number) {
+  await q("DELETE FROM kinoland.banners WHERE id = $1", [id]);
 }
 
 /* ── Movie visibility overrides ───────────────────────────────────────────── */
 
-export function listHiddenMovies(): { movieId: number; reason: string | null; createdAt: number }[] {
-  return (getDb().prepare("SELECT * FROM hidden_movies ORDER BY created_at DESC").all() as unknown as { movie_id: number; reason: string | null; created_at: number }[]).map(
-    (r) => ({ movieId: r.movie_id, reason: r.reason, createdAt: r.created_at }),
-  );
+export async function listHiddenMovies(): Promise<{ movieId: number; reason: string | null; createdAt: number }[]> {
+  const rows = await q<{ movie_id: number; reason: string | null; created_at: number }>("SELECT * FROM kinoland.hidden_movies ORDER BY created_at DESC");
+  return rows.map((r) => ({ movieId: r.movie_id, reason: r.reason, createdAt: Number(r.created_at) }));
 }
 
 let hiddenCache: { ids: Set<number>; at: number } | null = null;
 
-/** Hidden ids, cached briefly in memory because every movie list is filtered through it. */
-export function hiddenMovieIds(): Set<number> {
+/** Hidden ids, cached briefly per server instance because every movie list is filtered through it. */
+export async function hiddenMovieIds(): Promise<Set<number>> {
   if (hiddenCache && Date.now() - hiddenCache.at < 30_000) return hiddenCache.ids;
-  const ids = new Set((getDb().prepare("SELECT movie_id FROM hidden_movies").all() as unknown as { movie_id: number }[]).map((r) => r.movie_id));
+  const ids = new Set((await q<{ movie_id: number }>("SELECT movie_id FROM kinoland.hidden_movies")).map((r) => r.movie_id));
   hiddenCache = { ids, at: Date.now() };
   return ids;
 }
 
-export function hideMovie(movieId: number, reason: string | null) {
-  getDb().prepare("INSERT INTO hidden_movies (movie_id, reason, created_at) VALUES (?, ?, ?) ON CONFLICT(movie_id) DO UPDATE SET reason = excluded.reason").run(movieId, reason, Date.now());
+export async function hideMovie(movieId: number, reason: string | null) {
+  await q(
+    "INSERT INTO kinoland.hidden_movies (movie_id, reason, created_at) VALUES ($1, $2, $3) ON CONFLICT (movie_id) DO UPDATE SET reason = EXCLUDED.reason",
+    [movieId, reason, Date.now()],
+  );
   hiddenCache = null;
 }
 
-export function unhideMovie(movieId: number) {
-  getDb().prepare("DELETE FROM hidden_movies WHERE movie_id = ?").run(movieId);
+export async function unhideMovie(movieId: number) {
+  await q("DELETE FROM kinoland.hidden_movies WHERE movie_id = $1", [movieId]);
   hiddenCache = null;
 }
 
@@ -134,33 +126,25 @@ export interface ProviderLink {
   createdAt: number;
 }
 
-const toLink = (r: { id: number; movie_id: number; provider: string; url: string; region: string | null; created_at: number }): ProviderLink => ({
-  id: r.id,
-  movieId: r.movie_id,
-  provider: r.provider,
-  url: r.url,
-  region: r.region,
-  createdAt: r.created_at,
-});
+type LinkRow = { id: number; movie_id: number; provider: string; url: string; region: string | null; created_at: number };
+const toLink = (r: LinkRow): ProviderLink => ({ id: Number(r.id), movieId: r.movie_id, provider: r.provider, url: r.url, region: r.region, createdAt: Number(r.created_at) });
 
-export function listProviderLinks(movieId?: number): ProviderLink[] {
-  const rows = (movieId
-    ? getDb().prepare("SELECT * FROM provider_links WHERE movie_id = ? ORDER BY provider").all(movieId)
-    : getDb().prepare("SELECT * FROM provider_links ORDER BY created_at DESC").all()) as unknown as Parameters<typeof toLink>[0][];
+export async function listProviderLinks(movieId?: number): Promise<ProviderLink[]> {
+  const rows = movieId
+    ? await q<LinkRow>("SELECT * FROM kinoland.provider_links WHERE movie_id = $1 ORDER BY provider", [movieId])
+    : await q<LinkRow>("SELECT * FROM kinoland.provider_links ORDER BY created_at DESC");
   return rows.map(toLink);
 }
 
-export function upsertProviderLink(input: { movieId: number; provider: string; url: string; region: string | null }) {
-  getDb()
-    .prepare(
-      `INSERT INTO provider_links (movie_id, provider, url, region, created_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(movie_id, provider) DO UPDATE SET url = excluded.url, region = excluded.region`,
-    )
-    .run(input.movieId, input.provider, input.url, input.region, Date.now());
+export async function upsertProviderLink(input: { movieId: number; provider: string; url: string; region: string | null }) {
+  await q(
+    `INSERT INTO kinoland.provider_links (movie_id, provider, url, region, created_at) VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (movie_id, provider) DO UPDATE SET url = EXCLUDED.url, region = EXCLUDED.region`,
+    [input.movieId, input.provider, input.url, input.region, Date.now()],
+  );
 }
 
-export function deleteProviderLink(id: number): ProviderLink | null {
-  const row = getDb().prepare("SELECT * FROM provider_links WHERE id = ?").get(id) as Parameters<typeof toLink>[0] | undefined;
-  getDb().prepare("DELETE FROM provider_links WHERE id = ?").run(id);
+export async function deleteProviderLink(id: number): Promise<ProviderLink | null> {
+  const row = await one<LinkRow>("DELETE FROM kinoland.provider_links WHERE id = $1 RETURNING *", [id]);
   return row ? toLink(row) : null;
 }

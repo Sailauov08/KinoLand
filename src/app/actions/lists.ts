@@ -25,17 +25,17 @@ export async function toggleListAction(rawMovieId: unknown, rawList: unknown, de
   try {
     const kind = list.data === "watchlist" ? "watchlist" : "favorite";
     if (!desired) {
-      if (isInList(user.id, list.data, movieId.data)) {
-        removeFromList(user.id, list.data, movieId.data);
+      if (await isInList(user.id, list.data, movieId.data)) {
+        await removeFromList(user.id, list.data, movieId.data);
         await trackServer(`${kind}_remove`, { userId: user.id, movieId: movieId.data });
       }
       return { ok: true, inList: false };
     }
-    if (isInList(user.id, list.data, movieId.data)) return { ok: true, inList: true };
+    if (await isInList(user.id, list.data, movieId.data)) return { ok: true, inList: true };
     const res = await getMovie(movieId.data, await getLocale());
     if (!res.ok) return { ok: false, reason: "error" };
     if (!res.data) return { ok: false, reason: "not_found" };
-    addToList(user.id, list.data, toSnapshot(res.data));
+    await addToList(user.id, list.data, toSnapshot(res.data));
     await trackServer(`${kind}_add`, { userId: user.id, movieId: movieId.data, props: { title: res.data.title, genres: res.data.genreIds } });
     return { ok: true, inList: true };
   } catch (err) {

@@ -236,7 +236,7 @@ export const adminEn = {
   "health.missing": "Missing",
   "health.noWarnings": "No warnings.",
   "health.warn.tmdb": "TMDB is not configured or not responding — movie pages show an unavailable state.",
-  "health.warn.sqlite": "SQLite on local disk supports a single server instance. Use a persistent volume or PostgreSQL for serverless/multi-instance hosting.",
+  "health.warn.sqlite": "No DATABASE_URL: using the embedded development database (data/pglite). Set your Supabase connection string for production.",
   "health.warn.posthog": "PostHog is not configured; only first-party analytics is collected.",
   "health.warn.siteUrl": "NEXT_PUBLIC_SITE_URL is not set; Open Graph links default to localhost.",
   "health.warn.errors": "{n} errors were recorded in the last 24 hours.",

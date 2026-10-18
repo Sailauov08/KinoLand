@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fillDays, parseRange, rangeBounds } from "@/lib/admin/range";
 import { clientEventSchema, isBot, sanitizePath, sanitizeSearchQuery } from "@/lib/analytics/sanitize";
+import { addDaysToKey, dayKeyInTz, startOfDayInTz } from "@/lib/time";
 
 describe("search query privacy", () => {
   it("normalises ordinary queries", () => {
@@ -47,14 +48,27 @@ describe("admin date ranges", () => {
     expect(parseRange("bogus")).toBe("30d");
   });
 
-  it("produces one point per day including empty days", () => {
-    const now = new Date(2026, 9, 18, 15, 0).getTime();
-    const { from, days } = rangeBounds("7d", now);
+  it("produces one point per day (in the app time zone) including empty days", () => {
+    const now = Date.UTC(2026, 9, 18, 10, 0); // 15:00 in Almaty (UTC+5)
+    const { from, days } = rangeBounds("7d", "Asia/Almaty", now);
     expect(days).toBe(7);
-    expect(new Date(from).getDate()).toBe(12);
-    const pts = fillDays([{ day: "2026-10-14", n: 5 }], from, days, (r) => r?.n ?? 0);
+    expect(new Date(from).toISOString()).toBe("2026-10-11T19:00:00.000Z"); // Oct 12, 00:00 Almaty
+    const pts = fillDays([{ day: "2026-10-14", n: 5 }], from, days, (r) => r?.n ?? 0, "Asia/Almaty");
+    expect(pts[0].day).toBe("2026-10-12");
+    expect(pts[6].day).toBe("2026-10-18");
     expect(pts).toHaveLength(7);
     expect(pts.find((p) => p.day === "2026-10-14")?.value).toBe(5);
     expect(pts.filter((p) => p.value === 0)).toHaveLength(6);
+  });
+});
+
+describe("time zone helpers", () => {
+  it("computes calendar days and midnights across time zones", () => {
+    const ts = Date.UTC(2026, 9, 18, 21, 30); // 02:30 next day in Almaty
+    expect(dayKeyInTz(ts, "UTC")).toBe("2026-10-18");
+    expect(dayKeyInTz(ts, "Asia/Almaty")).toBe("2026-10-19");
+    expect(new Date(startOfDayInTz(ts, "Asia/Almaty")).toISOString()).toBe("2026-10-18T19:00:00.000Z");
+    expect(new Date(startOfDayInTz(ts, "Europe/Berlin", 1)).toISOString()).toBe("2026-10-16T22:00:00.000Z");
+    expect(addDaysToKey("2026-12-31", 1)).toBe("2027-01-01");
   });
 });

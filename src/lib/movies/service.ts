@@ -47,14 +47,14 @@ async function live<T>(fn: () => Promise<T>): Promise<MovieResult<T>> {
 }
 
 /** Removes titles an admin has hidden via a visibility override. */
-const visible = (movies: MovieSummary[]) => {
-  const hidden = hiddenMovieIds();
+const visible = async (movies: MovieSummary[]) => {
+  const hidden = await hiddenMovieIds();
   return hidden.size ? movies.filter((m) => !hidden.has(m.id)) : movies;
 };
 
 const listFrom = async (path: string, locale: Locale, params: Record<string, string | number> = {}, revalidate = HOUR) => {
   const page = mapPaged(await tmdbFetch(path, { language: lang(locale), ...params }, revalidate));
-  return { ...page, results: visible(page.results) };
+  return { ...page, results: await visible(page.results) };
 };
 
 export const getTrending = cache((locale: Locale) =>
@@ -106,7 +106,7 @@ export const getTop100 = cache((locale: Locale) =>
 );
 
 async function fetchDetails(id: number, locale: Locale): Promise<MovieDetails | null> {
-  if (hiddenMovieIds().has(id)) return null;
+  if ((await hiddenMovieIds()).has(id)) return null;
   let raw: unknown;
   try {
     raw = await tmdbFetch(
@@ -124,7 +124,7 @@ async function fetchDetails(id: number, locale: Locale): Promise<MovieDetails | 
   }
   const details = mapDetails(raw, locale);
   if (!details) return null;
-  details.recommendations = visible(details.recommendations);
+  details.recommendations = await visible(details.recommendations);
   // Many titles have no ru/kk synopsis or artwork; fill missing fields from the English record.
   if (locale !== "en" && (!details.overview || !details.tagline || !details.posterPath || !details.backdropPath)) {
     try {
@@ -191,7 +191,7 @@ export async function searchMovies(f: MovieFilters, locale: Locale): Promise<Mov
 export async function getMovieSummaries(ids: number[], locale: Locale): Promise<MovieResult<Map<number, MovieSummary>>> {
   return live(async () => {
     const out = new Map<number, MovieSummary>();
-    const hidden = hiddenMovieIds();
+    const hidden = await hiddenMovieIds();
     const queue = ids.filter((id) => !hidden.has(id)).slice(0, 120);
     const worker = async () => {
       while (queue.length) {

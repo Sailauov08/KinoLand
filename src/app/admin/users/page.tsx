@@ -28,7 +28,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps<"/admin
   const sp = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const f = paramsSchema.parse({ q: one(sp.q) ?? "", role: one(sp.role) ?? null, status: one(sp.status) ?? null, sort: one(sp.sort), page: one(sp.page) });
-  const res = listUsersPaged({ query: f.q, role: f.role, status: f.status, sort: f.sort, page: f.page, perPage: 20 });
+  const res = await listUsersPaged({ query: f.q, role: f.role, status: f.status, sort: f.sort, page: f.page, perPage: 20 });
   const tag = localeTags[locale];
   const date = (ts: number | null) => (ts ? new Date(ts).toLocaleDateString(tag, { dateStyle: "medium" }) : at("users.never"));
   const pageHref = (p: number) => {

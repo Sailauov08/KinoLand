@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { trackServer } from "@/lib/analytics/server";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { rateLimit } from "@/lib/auth/rate-limit";
+import { rateLimitShared } from "@/lib/auth/rate-limit";
 import { createSession, destroySession, safeNextPath } from "@/lib/auth/session";
 import { createUser, findUserByEmail } from "@/lib/db/users";
 import { LOCALE_COOKIE } from "@/lib/i18n/config";
@@ -38,10 +38,10 @@ export async function registerAction(_prev: FormState, formData: FormData): Prom
   if (!parsed.success) return { error: "auth.invalidInput", fields: fieldErrors(parsed.error), values };
   const { name, email, password } = parsed.data;
 
-  if (!rateLimit(`register:${await clientKey("")}`, 10, 60 * 60 * 1000)) return { error: "auth.rateLimited", values };
-  if (findUserByEmail(email)) return { error: "auth.emailTaken", fields: { email: true }, values };
+  if (!(await rateLimitShared(`register:${await clientKey("")}`, 10, 60 * 60 * 1000))) return { error: "auth.rateLimited", values };
+  if (await findUserByEmail(email)) return { error: "auth.emailTaken", fields: { email: true }, values };
 
-  const user = createUser({ email, name, passwordHash: await hashPassword(password), locale: await getLocale() });
+  const user = await createUser({ email, name, passwordHash: await hashPassword(password), locale: await getLocale() });
   logger.info("auth.registered", { userId: user.id });
   await createSession(user.id);
   await trackServer("signup_success", { userId: user.id });
@@ -54,9 +54,9 @@ export async function loginAction(_prev: FormState, formData: FormData): Promise
   if (!parsed.success) return { error: "auth.invalidInput", fields: fieldErrors(parsed.error), values };
   const { email, password } = parsed.data;
 
-  if (!rateLimit(`login:${await clientKey(email)}`, 8, 60 * 1000)) return { error: "auth.rateLimited", values };
+  if (!(await rateLimitShared(`login:${await clientKey(email)}`, 8, 60 * 1000))) return { error: "auth.rateLimited", values };
 
-  const user = findUserByEmail(email);
+  const user = await findUserByEmail(email);
   const valid = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
   if (!user || !valid) {
     logger.info("auth.login_failed");

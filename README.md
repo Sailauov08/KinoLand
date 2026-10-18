@@ -16,9 +16,10 @@ cp .env.example .env.local      # add your TMDB credential
 npm run dev                     # http://localhost:3000
 ```
 
-Requires **Node.js 22.13+ (tested on Node 24)**. The database is SQLite via Node's built-in
-`node:sqlite`, so there's nothing to compile and no database server to run. The schema migrates
-automatically on first start.
+Requires **Node.js 22.13+ (tested on Node 24)**. The database is **PostgreSQL**. In production
+that's **Supabase** (`DATABASE_URL`). Locally, with `DATABASE_URL` empty, KinoLand runs an embedded
+Postgres (PGlite) in `data/pglite`, so development needs no database server. The schema migrates
+automatically on first use; you can also run `npm run db:migrate`.
 
 ### Environment variables (names only)
 
@@ -28,7 +29,8 @@ automatically on first start.
 | `NEXT_PUBLIC_SITE_URL` | production | Base URL for Open Graph links |
 | `POSTHOG_PROJECT_API_KEY`, `POSTHOG_HOST` | optional | Forward consented events to PostHog (server-side) |
 | `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | optional | Show PostHog numbers in `/admin/analytics` (server-only) |
-| `DATABASE_PATH` | optional | SQLite file location (default `data/kino.db`) |
+| `DATABASE_URL` | production | Supabase Postgres connection string (Transaction pooler, port 6543) |
+| `APP_TIMEZONE` | optional | Time zone for daily statistics (default `Asia/Almaty`) |
 
 ## Administrator access
 
@@ -82,11 +84,12 @@ Tracked events: `page_view`, `movie_view`, `movie_search`, `watchlist_add`, `wat
 `favorite_add`, `favorite_remove`, `signup_success`, `login_success`, `playback_started`,
 `playback_error`.
 
-## Database
+## Database (PostgreSQL / Supabase)
 
-SQLite file `data/kino.db` (gitignored, persistent across restarts). Migrations live in
-`src/lib/db/migrations.ts` and are additive; v1 data is preserved. A pre-upgrade backup was written
-to `data/backups/`.
+All tables live in the private **`kinoland`** schema. Supabase's public Data API only exposes
+`public`, and every table also has **Row Level Security enabled with no policies**, so the anon key
+can read nothing. The app connects server-side with `DATABASE_URL`. No Supabase client library or
+service-role key is used or exposed.
 
 | Table | Purpose |
 | --- | --- |
@@ -97,19 +100,46 @@ to `data/backups/`.
 | `daily_salts` | Today's visitor-hash salt (older salts deleted) |
 | `error_log` | Server/client errors for the health dashboard |
 | `audit_log` | Sensitive admin actions |
+| `rate_limits` | Login/registration throttling shared across serverless instances |
 | `banners`, `hidden_movies`, `provider_links`, `settings` | KinoLand-owned editorial content and settings |
-| `collections`, `collection_items` | Retired feature; kept only to preserve existing data |
+| `schema_migrations` | Applied migration versions |
 
-To inspect users safely (no hashes), use **Admin → Users**, or run read-only:
+Schema: `src/lib/db/schema.ts`. Connection: `src/lib/db/index.ts`.
+
+### Moving existing local data to Supabase
+
+The previous version stored data in SQLite (`data/kino.db`). To copy accounts (with their existing
+password hashes), lists, settings, banners and analytics into Supabase:
 
 ```bash
-node -e "const d=new (require('node:sqlite').DatabaseSync)('data/kino.db',{readOnly:true});console.table(d.prepare('SELECT id,name,role,status,created_at FROM users').all())"
+# with DATABASE_URL set in .env.local
+npm run db:import-sqlite
 ```
 
-**Deployment note:** SQLite on local disk suits a single long-running server (VPS, Docker with a
-volume, Railway/Fly with a persistent volume). Serverless hosts like Vercel have an ephemeral
-filesystem, so they'd need a hosted database (e.g. PostgreSQL) instead. That would be a separate
-migration of `src/lib/db/*`.
+The import is idempotent, and synthetic test accounts (`@kino.test`, `@kinoland.test`) are skipped
+unless you pass `--include-test-accounts`.
+
+To inspect users safely (no hashes), use **Admin → Users**, or the Supabase Table Editor (schema
+`kinoland`). Avoid exporting the `password_hash` column.
+
+## Deploy: GitHub → Vercel + Supabase
+
+1. **Supabase:** create a project (the free tier is enough to start). In **Connect**, copy the
+   **Transaction pooler** URI (port 6543), insert your database password and append
+   `?sslmode=require`.
+2. **Schema and data:** put that URI in `.env.local` as `DATABASE_URL`, then run
+   `npm run db:migrate` and, if you're moving old data, `npm run db:import-sqlite`.
+3. **GitHub:** push this repository.
+4. **Vercel:** *Add New → Project → Import* the GitHub repo (framework auto-detected: Next.js). Under
+   **Environment Variables** add `TMDB_API_KEY` (or `TMDB_READ_ACCESS_TOKEN`), `DATABASE_URL`,
+   `NEXT_PUBLIC_SITE_URL` (your Vercel URL), optionally `APP_TIMEZONE` and the PostHog variables,
+   then deploy.
+5. **First admin:** register on the live site, then run locally (with the production `DATABASE_URL`):
+   `npm run admin:promote -- you@example.com`.
+
+Notes: in-memory caches (TMDB circuit breaker, hidden-movie cache, analytics event rate limit) are
+per serverless instance, which is fine for this use. Login and registration limits are stored in
+Postgres.
 
 ## Scripts
 
@@ -119,7 +149,9 @@ migration of `src/lib/db/*`.
 | `npm run build` / `npm start` | Production build / serve |
 | `npm run typecheck` | TypeScript strict check |
 | `npm run lint` | ESLint |
-| `npm test` | Vitest suites (unit, DB migration, authorization, analytics privacy) |
+| `npm test` | Vitest suites (run against an in-memory Postgres) |
+| `npm run db:migrate` | Create/update the schema in `DATABASE_URL` (or the local embedded DB) |
+| `npm run db:import-sqlite` | Copy data from the old `data/kino.db` SQLite file |
 | `npm run admin:promote -- <email>` | One-time server-side admin bootstrap |
 
 ## Architecture
@@ -132,7 +164,7 @@ src/
     admin/             Dashboard queries, date ranges, health checks, PostHog query client
     analytics/         Privacy rules (sanitize) and server-side tracking/forwarding
     auth/              scrypt passwords, DB sessions, rate limiting, admin API guard
-    db/                node:sqlite connection, migrations, repositories
+    db/                Postgres connection (postgres.js / PGlite), schema, repositories
     i18n/              en/ru/kk dictionaries (public + admin)
     movies/            TMDB client, schemas, live service, image loader
   proxy.ts             Fast 307 to /login for /admin, /library, /profile without a session
@@ -148,7 +180,6 @@ src/
 
 ## Known limitations
 
-- Single-instance storage (SQLite, in-memory rate limits). See the deployment note.
 - No email verification or password reset by email (needs an email provider).
 - Routes with streaming loading states return HTTP 200 with a not-found page or client redirect.
   Private areas also get a real 307 from `proxy.ts`.

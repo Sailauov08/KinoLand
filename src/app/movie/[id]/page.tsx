@@ -66,7 +66,7 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
     { label: t("movie.originalTitle"), value: movie.originalTitle !== movie.title ? movie.originalTitle : null },
   ].filter((f) => f.value);
 
-  const providers = listProviderLinks(movie.id);
+  const providers = await listProviderLinks(movie.id);
   const path = `/movie/${movie.id}`;
 
   return (

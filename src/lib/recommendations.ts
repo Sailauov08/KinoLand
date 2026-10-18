@@ -8,8 +8,8 @@ import { getRecommendationCandidates } from "@/lib/movies/service";
 export async function getRecommendationsFor(user: User, locale: Locale, limit = 24) {
   const taste: TasteInput = {
     preferredGenres: user.preferredGenres,
-    favorites: getList(user.id, "favorite").map((i) => i.snapshot),
-    watchlist: getList(user.id, "watchlist").map((i) => i.snapshot),
+    favorites: (await getList(user.id, "favorite")).map((i) => i.snapshot),
+    watchlist: (await getList(user.id, "watchlist")).map((i) => i.snapshot),
   };
   const genres = topGenres(genreAffinity(taste), 3);
   const hasTaste = genres.length > 0;

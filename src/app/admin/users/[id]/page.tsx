@@ -22,14 +22,14 @@ export default async function AdminUserPage({ params }: PageProps<"/admin/users/
   const { id } = await params;
   const me = await requireAdmin(`/admin/users/${id}`);
   if (!z.string().uuid().safeParse(id).success) notFound();
-  const user = findUserById(id);
+  const user = await findUserById(id);
   if (!user) notFound();
   const { at, locale } = await getAdminT();
   const tag = localeTags[locale];
   const dt = (ts: number | null) => (ts ? new Date(ts).toLocaleString(tag, { dateStyle: "medium", timeStyle: "short" }) : at("users.never"));
-  const sessions = countActiveSessions(user.id);
-  const lists = listCounts(user.id);
-  const history = listAudit({ targetId: user.id, perPage: 20 });
+  const sessions = await countActiveSessions(user.id);
+  const lists = await listCounts(user.id);
+  const history = await listAudit({ targetId: user.id, perPage: 20 });
   const isSelf = user.id === me.id;
 
   const facts: [string, React.ReactNode][] = [

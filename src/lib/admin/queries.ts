@@ -1,6 +1,6 @@
 import "server-only";
-import { getDb } from "@/lib/db";
-import { countErrorsSince, errorsByDay, recentErrors } from "@/lib/db/errors";
+import { count, q } from "@/lib/db";
+import { countErrorsLast24h, errorsByDay, recentErrors } from "@/lib/db/errors";
 import {
   countEvents,
   countsByType,
@@ -14,132 +14,145 @@ import {
   visitsByDay,
   type Range,
 } from "@/lib/db/events";
-import { countUsersBefore, getUserStats, signupsByDay } from "@/lib/db/users";
+import { countUsersBefore, countUsersSince, getUserStats, signupsByDay } from "@/lib/db/users";
+import { env } from "@/lib/env";
+import { startOfDayInTz } from "@/lib/time";
 import { fillDays, rangeBounds, type RangeKey } from "./range";
 
-export function overviewData(key: RangeKey) {
-  const { from, to, days } = rangeBounds(key);
+const TZ = () => env.appTimezone;
+
+export async function overviewData(key: RangeKey) {
+  const { from, to, days } = rangeBounds(key, TZ());
   const r: Range = { from, to };
-  const users = getUserStats();
-  const visits = visitsByDay(r);
-  const counts = countsByType(r);
+  const fill = <T extends { day: string }>(rows: T[], pick: (row: T | undefined) => number) => fillDays(rows, from, days, pick, TZ());
+
+  const [users, visits, counts, before, signups, series, popularMovies, errors, errors24h, newInRange] = await Promise.all([
+    getUserStats(),
+    visitsByDay(r),
+    countsByType(r),
+    countUsersBefore(from),
+    signupsByDay(from),
+    seriesByDay(["movie_view", "watchlist_add", "movie_search"], r),
+    topMovies("movie_view", r, 8),
+    recentErrors(6),
+    countErrorsLast24h(),
+    countUsersSince(from),
+  ]);
 
   // Cumulative registered users per day: accounts before the range + daily sign-ups.
-  let running = countUsersBefore(from);
-  const growth = fillDays(signupsByDay(from), from, days, (row) => row?.count ?? 0).map((p) => ({ day: p.day, value: (running += p.value) }));
-  const series = seriesByDay(["movie_view", "watchlist_add", "movie_search"], r);
-  const pick = (type: string) => fillDays(series.filter((s) => s.type === type), from, days, (row) => row?.count ?? 0);
+  let running = before;
+  const growth = fill(signups, (row) => row?.count ?? 0).map((p) => ({ day: p.day, value: (running += p.value) }));
+  const pick = (type: string) => fill(series.filter((s) => s.type === type), (row) => row?.count ?? 0);
 
   return {
     range: { from, to, days },
     users,
-    newInRange: getDb().prepare("SELECT COUNT(*) AS n FROM users WHERE created_at >= ?").get(from) as { n: number },
+    newInRange,
     pageViews: counts.page_view ?? 0,
     // Unique visitors are counted per day (the anonymous hash rotates daily), then summed.
-    visitorDays: visits.reduce((a, v) => a + v.visitors, 0),
+    visitorDays: visits.reduce((a, v) => a + Number(v.visitors), 0),
     movieViews: counts.movie_view ?? 0,
     searches: counts.movie_search ?? 0,
     watchlistInteractions: (counts.watchlist_add ?? 0) + (counts.watchlist_remove ?? 0),
     growth,
     visitsSeries: {
-      views: fillDays(visits, from, days, (row) => row?.views ?? 0),
-      visitors: fillDays(visits, from, days, (row) => row?.visitors ?? 0),
+      views: fill(visits, (row) => row?.views ?? 0),
+      visitors: fill(visits, (row) => row?.visitors ?? 0),
     },
     interactions: { movieViews: pick("movie_view"), watchlistAdds: pick("watchlist_add"), searches: pick("movie_search") },
-    popularMovies: topMovies("movie_view", r, 8),
-    recentErrors: recentErrors(6),
-    errors24h: countErrorsSince(Date.now() - 86_400_000),
+    popularMovies,
+    recentErrors: errors,
+    errors24h,
   };
 }
 
-export function analyticsData(key: RangeKey) {
-  const { from, to, days } = rangeBounds(key);
+export async function analyticsData(key: RangeKey) {
+  const { from, to, days } = rangeBounds(key, TZ());
   const r = { from, to };
-  const visits = visitsByDay(r);
+  const [visits, counts, paths] = await Promise.all([visitsByDay(r), countsByType(r), topPaths(r, 12)]);
   return {
     range: { from, to, days },
-    counts: countsByType(r),
-    visitorDays: visits.reduce((a, v) => a + v.visitors, 0),
-    views: fillDays(visits, from, days, (row) => row?.views ?? 0),
-    visitors: fillDays(visits, from, days, (row) => row?.visitors ?? 0),
-    topPaths: topPaths(r, 12),
+    counts,
+    visitorDays: visits.reduce((a, v) => a + Number(v.visitors), 0),
+    views: fillDays(visits, from, days, (row) => row?.views ?? 0, TZ()),
+    visitors: fillDays(visits, from, days, (row) => row?.visitors ?? 0, TZ()),
+    topPaths: paths,
   };
 }
 
-export function movieAnalyticsData(key: RangeKey) {
-  const { from, to } = rangeBounds(key);
+export async function movieAnalyticsData(key: RangeKey) {
+  const { from, to } = rangeBounds(key, TZ());
   const r = { from, to };
   const now = Date.now();
-  const last7 = topMovies("movie_view", { from: now - 7 * 86_400_000, to: now }, 50);
-  const prev7 = new Map(topMovies("movie_view", { from: now - 14 * 86_400_000, to: now - 7 * 86_400_000 }, 200).map((m) => [m.movieId, m.count]));
+  const [mostViewed, genres, watchlistAdds, favorites, searched, last7, prev7List, playback, playbackStarts, playbackErrors] = await Promise.all([
+    topMovies("movie_view", r, 10),
+    genreCounts(r),
+    topMovies("watchlist_add", r, 10),
+    topMovies("favorite_add", r, 10),
+    topMovies("movie_search", r, 10),
+    topMovies("movie_view", { from: now - 7 * 86_400_000, to: now }, 50),
+    topMovies("movie_view", { from: now - 14 * 86_400_000, to: now - 7 * 86_400_000 }, 200),
+    playbackAvailability(r),
+    countEvents("playback_started", r),
+    countEvents("playback_error", r),
+  ]);
+  const prev7 = new Map(prev7List.map((m) => [m.movieId, m.count]));
   const trending = last7
     .map((m) => ({ ...m, previous: prev7.get(m.movieId) ?? 0, delta: m.count - (prev7.get(m.movieId) ?? 0) }))
     .filter((m) => m.delta > 0)
     .sort((a, b) => b.delta - a.delta)
     .slice(0, 8);
-  return {
-    mostViewed: topMovies("movie_view", r, 10),
-    genres: genreCounts(r),
-    watchlistAdds: topMovies("watchlist_add", r, 10),
-    favorites: topMovies("favorite_add", r, 10),
-    searched: topMovies("movie_search", r, 10),
-    trending,
-    playback: playbackAvailability(r),
-    playbackStarts: countEvents("playback_started", r),
-    playbackErrors: countEvents("playback_error", r),
-  };
+  return { mostViewed, genres, watchlistAdds, favorites, searched, trending, playback, playbackStarts, playbackErrors };
 }
 
-export function searchAnalyticsData(key: RangeKey) {
-  const { from, to, days } = rangeBounds(key);
+export async function searchAnalyticsData(key: RangeKey) {
+  const { from, to, days } = rangeBounds(key, TZ());
   const r = { from, to };
-  const summary = searchSummary(r);
-  const top = topSearches(r, 25);
+  const [summary, top, series] = await Promise.all([searchSummary(r), topSearches(r, 25), seriesByDay(["movie_search"], r)]);
   return {
     summary,
     top,
-    zero: top.filter((q) => q.zeroResults > 0).sort((a, b) => b.zeroResults - a.zeroResults).slice(0, 12),
-    overTime: fillDays(seriesByDay(["movie_search"], r), from, days, (row) => row?.count ?? 0),
+    zero: top.filter((x) => x.zeroResults > 0).sort((a, b) => b.zeroResults - a.zeroResults).slice(0, 12),
+    overTime: fillDays(series, from, days, (row) => row?.count ?? 0, TZ()),
   };
 }
 
 /** Aggregate list statistics. Deliberately no per-user listing (lists are private). */
-export function watchlistData(key: RangeKey) {
-  const db = getDb();
-  const { from, to, days } = rangeBounds(key);
-  const n = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
-  const top = (list: "watchlist" | "favorite") =>
+export async function watchlistData(key: RangeKey) {
+  const { from, to, days } = rangeBounds(key, TZ());
+  const top = async (list: "watchlist" | "favorite") =>
     (
-      db
-        .prepare(
-          `SELECT movie_id AS movieId, COUNT(*) AS count, MAX(json_extract(snapshot, '$.title')) AS title
-           FROM list_items WHERE list = ? GROUP BY movie_id ORDER BY count DESC, MAX(added_at) DESC LIMIT 10`,
-        )
-        .all(list) as unknown as { movieId: number; count: number; title: string | null }[]
-    ).map((m) => ({ ...m, title: m.title ?? `#${m.movieId}` }));
-  const series = seriesByDay(["watchlist_add", "watchlist_remove"], { from, to });
-  const usersWithLists = n("SELECT COUNT(DISTINCT user_id) AS n FROM list_items");
-  const totalWatchlist = n("SELECT COUNT(*) AS n FROM list_items WHERE list = 'watchlist'");
-  const totalFavorites = n("SELECT COUNT(*) AS n FROM list_items WHERE list = 'favorite'");
+      await q<{ movie_id: number; count: number; title: string | null }>(
+        `SELECT movie_id, COUNT(*)::int AS count, MAX(snapshot->>'title') AS title
+         FROM kinoland.list_items WHERE list = $1 GROUP BY movie_id ORDER BY count DESC, MAX(added_at) DESC LIMIT 10`,
+        [list],
+      )
+    ).map((m) => ({ movieId: m.movie_id, count: Number(m.count), title: m.title ?? `#${m.movie_id}` }));
+  const [series, usersWithLists, totalWatchlist, totalFavorites, mostSaved, mostFavorited] = await Promise.all([
+    seriesByDay(["watchlist_add", "watchlist_remove"], { from, to }),
+    count("SELECT COUNT(DISTINCT user_id)::int AS n FROM kinoland.list_items"),
+    count("SELECT COUNT(*)::int AS n FROM kinoland.list_items WHERE list = 'watchlist'"),
+    count("SELECT COUNT(*)::int AS n FROM kinoland.list_items WHERE list = 'favorite'"),
+    top("watchlist"),
+    top("favorite"),
+  ]);
   return {
     totalWatchlist,
     totalFavorites,
     usersWithLists,
     avgPerUser: usersWithLists ? (totalWatchlist + totalFavorites) / usersWithLists : 0,
-    mostSaved: top("watchlist"),
-    mostFavorited: top("favorite"),
-    adds: fillDays(series.filter((s) => s.type === "watchlist_add"), from, days, (row) => row?.count ?? 0),
-    removes: fillDays(series.filter((s) => s.type === "watchlist_remove"), from, days, (row) => row?.count ?? 0),
+    mostSaved,
+    mostFavorited,
+    adds: fillDays(series.filter((s) => s.type === "watchlist_add"), from, days, (row) => row?.count ?? 0, TZ()),
+    removes: fillDays(series.filter((s) => s.type === "watchlist_remove"), from, days, (row) => row?.count ?? 0, TZ()),
   };
 }
 
-export function errorTrend(days = 14) {
-  const begin = new Date();
-  begin.setHours(0, 0, 0, 0);
-  begin.setDate(begin.getDate() - (days - 1));
-  const rows = errorsByDay(begin.getTime());
+export async function errorTrend(days = 14) {
+  const begin = startOfDayInTz(Date.now(), TZ(), days - 1);
+  const rows = await errorsByDay(begin);
   return {
-    server: fillDays(rows, begin.getTime(), days, (row) => row?.server ?? 0),
-    client: fillDays(rows, begin.getTime(), days, (row) => row?.client ?? 0),
+    server: fillDays(rows, begin, days, (row) => row?.server ?? 0, TZ()),
+    client: fillDays(rows, begin, days, (row) => row?.client ?? 0, TZ()),
   };
 }

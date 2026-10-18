@@ -16,8 +16,8 @@ export default async function ProfilePage() {
   const user = await requireUser("/profile");
   const { locale, t } = await getT();
   const stats = [
-    { label: t("list.watchlist"), value: getList(user.id, "watchlist").length },
-    { label: t("list.favorites"), value: getList(user.id, "favorite").length },
+    { label: t("list.watchlist"), value: (await getList(user.id, "watchlist")).length },
+    { label: t("list.favorites"), value: (await getList(user.id, "favorite")).length },
     { label: t("profile.genres"), value: user.preferredGenres.length },
   ];
 

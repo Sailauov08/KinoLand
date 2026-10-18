@@ -23,7 +23,7 @@ type Ctx = { locale: Locale; t: TFunction };
 export default async function HomePage() {
   const [{ locale, t }, user] = await Promise.all([getT(), getCurrentUser()]);
   const ctx = { locale, t };
-  const display = getDisplaySettings();
+  const display = await getDisplaySettings();
   const moodGenres = user?.preferredGenres.length ? user.preferredGenres.slice(0, 2) : [878, 16];
 
   return (
@@ -83,7 +83,7 @@ export default async function HomePage() {
 
 /** Admin-curated banner of the day (active banners rotate daily), else the week's top trending film. */
 async function HomeHero({ locale, t }: Ctx) {
-  const banner = bannerOfTheDay();
+  const banner = await bannerOfTheDay();
   let movieId = banner?.movieId;
   if (!movieId) {
     const trending = await getTrending(locale);
@@ -159,8 +159,8 @@ async function ForYouRail({ user, ...ctx }: Ctx & { user: User }) {
 }
 
 async function WatchlistRail({ user, ...ctx }: Ctx & { user: User }) {
-  const items = getList(user.id, "watchlist").slice(0, 20);
-  const movies = await withFreshData(items.map((i) => i.snapshot), ctx.locale, (fresh) => refreshListSnapshots(user.id, fresh));
+  const items = (await getList(user.id, "watchlist")).slice(0, 20);
+  const movies = await withFreshData(items.map((i) => i.snapshot), ctx.locale, async (fresh) => await refreshListSnapshots(user.id, fresh));
   return <RailSection title={ctx.t("home.continueWatchlist")} movies={movies} href="/library" {...ctx} />;
 }
 

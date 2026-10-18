@@ -23,8 +23,8 @@ export default async function AdminSettingsPage({ searchParams }: PageProps<"/ad
   const { at, locale } = await getAdminT();
   const tag = localeTags[locale];
   const page = z.coerce.number().int().min(1).catch(1).parse((await searchParams).page);
-  const audit = listAudit({ page, perPage: 25 });
-  const storage = eventStorageInfo();
+  const audit = await listAudit({ page, perPage: 25 });
+  const storage = await eventStorageInfo();
   const dt = (ts: number) => new Date(ts).toLocaleString(tag, { dateStyle: "medium", timeStyle: "short" });
 
   return (
@@ -38,7 +38,7 @@ export default async function AdminSettingsPage({ searchParams }: PageProps<"/ad
           </pre>
         </Panel>
         <Panel at={at} title={at("settings.retention")} hint={at("settings.retentionHint")} source="events">
-          <RetentionForm days={getRetentionDays()} />
+          <RetentionForm days={await getRetentionDays()} />
           <p className="mt-3 text-xs text-subtle">{at("settings.stored", { n: storage.total.toLocaleString(tag), date: storage.oldest ? dt(storage.oldest) : "—" })}</p>
         </Panel>
       </div>

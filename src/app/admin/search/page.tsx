@@ -17,7 +17,7 @@ export default async function AdminSearchPage({ searchParams }: PageProps<"/admi
   await requireAdmin("/admin/search");
   const { at, locale } = await getAdminT();
   const range = parseRange((await searchParams).range);
-  const d = searchAnalyticsData(range);
+  const d = await searchAnalyticsData(range);
   const tag = localeTags[locale];
   const fmt = (n: number) => n.toLocaleString(tag);
   const zeroRate = d.summary.total ? Math.round((d.summary.zeroResults / d.summary.total) * 100) : 0;

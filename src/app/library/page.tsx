@@ -19,11 +19,11 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
   const user = await requireUser(tab === "favorite" ? "/library?tab=favorites" : "/library");
   const { locale, t } = await getT();
 
-  const watchCount = getList(user.id, "watchlist").length;
-  const favCount = getList(user.id, "favorite").length;
-  const items = getList(user.id, tab);
+  const watchCount = (await getList(user.id, "watchlist")).length;
+  const favCount = (await getList(user.id, "favorite")).length;
+  const items = await getList(user.id, tab);
 
-  const movies = await withFreshData(items.map((i) => i.snapshot), locale, (fresh) => refreshListSnapshots(user.id, fresh));
+  const movies = await withFreshData(items.map((i) => i.snapshot), locale, async (fresh) => await refreshListSnapshots(user.id, fresh));
 
   const tabs = [
     { key: "watchlist" as const, href: "/library", label: t("list.watchlist"), count: watchCount, icon: <BookmarkIcon size={16} /> },

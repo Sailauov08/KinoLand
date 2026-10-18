@@ -238,7 +238,7 @@ export const adminRu: AdminDictionary = {
   "health.missing": "Нет",
   "health.noWarnings": "Предупреждений нет.",
   "health.warn.tmdb": "TMDB не настроен или не отвечает — страницы фильмов показывают сообщение о недоступности.",
-  "health.warn.sqlite": "SQLite на локальном диске поддерживает только один экземпляр сервера. Для serverless или нескольких экземпляров используйте постоянный диск или PostgreSQL.",
+  "health.warn.sqlite": "DATABASE_URL не задан: используется встроенная база для разработки (data/pglite). Для продакшена укажите строку подключения Supabase.",
   "health.warn.posthog": "PostHog не настроен; собирается только собственная аналитика.",
   "health.warn.siteUrl": "NEXT_PUBLIC_SITE_URL не задан; ссылки Open Graph указывают на localhost.",
   "health.warn.errors": "За последние 24 часа зафиксировано ошибок: {n}.",

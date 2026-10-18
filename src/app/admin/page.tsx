@@ -17,7 +17,7 @@ export default async function AdminOverviewPage({ searchParams }: PageProps<"/ad
   await requireAdmin("/admin");
   const { at, locale } = await getAdminT();
   const range = parseRange((await searchParams).range);
-  const d = overviewData(range);
+  const d = await overviewData(range);
   const tag = localeTags[locale];
   const fmt = (n: number) => n.toLocaleString(tag);
   const time = (ts: number) => new Date(ts).toLocaleString(tag, { dateStyle: "medium", timeStyle: "short" });
@@ -53,7 +53,7 @@ export default async function AdminOverviewPage({ searchParams }: PageProps<"/ad
             <EmptyNote>{at("empty.noEvents")}</EmptyNote>
           )}
         </Panel>
-        <Panel at={at} title={at("overview.userGrowth")} source="db" hint={`${at("overview.newSignups")}: ${fmt(d.newInRange.n)}`}>
+        <Panel at={at} title={at("overview.userGrowth")} source="db" hint={`${at("overview.newSignups")}: ${fmt(d.newInRange)}`}>
           <TimeSeriesChart locale={tag} label={at("overview.userGrowth")} series={[{ label: at("overview.totalAccounts"), color: "#79c99a", points: d.growth }]} />
         </Panel>
       </div>

@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   const ua = req.headers.get("user-agent");
   if (isBot(ua)) return new NextResponse(null, { status: 204 });
 
-  const hash = visitorHash(clientIp(req.headers), ua ?? "");
+  const hash = await visitorHash(clientIp(req.headers), ua ?? "");
   if (!rateLimit(`events:${hash}`, 120, 60_000)) return new NextResponse(null, { status: 429 });
 
   let body: unknown;
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   const path = sanitizePath(e.path);
 
   if (e.type === "client_error") {
-    recordError({ source: "client", event: "client_error", message: e.props.message, path });
+    await recordError({ source: "client", event: "client_error", message: e.props.message, path });
     return new NextResponse(null, { status: 204 });
   }
 
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       break;
   }
 
-  recordEvent({ type: e.type, visitorHash: hash, path, movieId, props });
+  await recordEvent({ type: e.type, visitorHash: hash, path, movieId, props });
 
   if (req.cookies.get(CONSENT_COOKIE)?.value === "granted") {
     const posthogProps = { ...props, movie_id: movieId ?? undefined, $current_url: path ?? undefined };
