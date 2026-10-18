@@ -1,6 +1,6 @@
 
 <div align="center">
-<img src="./kinoland-banner.jpg" alt="KinoLand — Cinematic Movie Discovery Platform" width="100%" />
+<img src="./kinoland-banner.jpg.jpeg" alt="KinoLand — Cinematic Movie Discovery Platform" width="100%" />
 
 # 🎬 KinoLand
 
