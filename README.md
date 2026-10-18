@@ -138,6 +138,10 @@ To inspect users safely (no hashes), use **Admin → Users**, or the Supabase Ta
 5. **First admin:** register on the live site, then run locally (with the production `DATABASE_URL`):
    `npm run admin:promote -- you@example.com`.
 
+`vercel.json` pins serverless functions to **`icn1` (Seoul)**, next to the Supabase project
+(`ap-northeast-2`). If your Supabase project is in another region, change it to the closest Vercel
+region, because every page makes several database round trips.
+
 The app uses node-postgres (`pg`), which sends one query per connection at a time. That matters
 because Supabase's transaction pooler stalls on pipelined queries.
 
