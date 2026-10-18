@@ -11,7 +11,7 @@ const envSchema = z.object({
   // Embedded PGlite database used when DATABASE_URL is unset (local dev/tests): a directory or "memory".
   EMBEDDED_DB_DIR: z.string().trim().optional(),
   ALLOW_EMBEDDED_DB: z.string().trim().optional(),
-  // Time zone used for daily statistics (servers like Vercel run in UTC).
+  // Time zone used for daily statistics (cloud servers usually run in UTC).
   APP_TIMEZONE: z.string().trim().optional(),
   // Optional PostHog product analytics. Events are forwarded server-side, only after visitor consent;
   // no PostHog script or key is sent to browsers.

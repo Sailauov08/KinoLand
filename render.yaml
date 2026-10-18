@@ -1,0 +1,25 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Dashboard → New → Blueprint → select this repo. Secrets marked `sync: false` are asked for at setup.
+services:
+  - type: web
+    name: kinoland
+    runtime: node
+    # Closest Render region to the Supabase project (ap-northeast-2, Seoul).
+    region: singapore
+    plan: free
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: APP_TIMEZONE
+        value: Asia/Almaty
+      - key: TMDB_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false

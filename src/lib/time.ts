@@ -1,4 +1,4 @@
-/** Time-zone aware day helpers (pure; servers such as Vercel run in UTC). */
+/** Time-zone aware day helpers (pure; cloud servers usually run in UTC). */
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 function parts(ts: number, tz: string) {

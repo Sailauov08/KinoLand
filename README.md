@@ -123,31 +123,27 @@ unless you pass `--include-test-accounts`.
 To inspect users safely (no hashes), use **Admin → Users**, or the Supabase Table Editor (schema
 `kinoland`). Avoid exporting the `password_hash` column.
 
-## Deploy: GitHub → Vercel + Supabase
+## Deploy: GitHub → Render + Supabase
 
-1. **Supabase:** create a project (the free tier is enough to start). In **Connect**, copy the
-   **Transaction pooler** URI (port 6543), insert your database password and append
-   `?sslmode=require`.
+1. **Supabase:** create a project. In **Connect**, copy the **Transaction pooler** URI (port 6543),
+   insert your database password and append `?sslmode=require`.
 2. **Schema and data:** put that URI in `.env.local` as `DATABASE_URL`, then run
    `npm run db:migrate` and, if you're moving old data, `npm run db:import-sqlite`.
 3. **GitHub:** push this repository.
-4. **Vercel:** *Add New → Project → Import* the GitHub repo (framework auto-detected: Next.js). Under
-   **Environment Variables** add `TMDB_API_KEY` (or `TMDB_READ_ACCESS_TOKEN`), `DATABASE_URL`,
-   `NEXT_PUBLIC_SITE_URL` (your Vercel URL), optionally `APP_TIMEZONE` and the PostHog variables,
-   then deploy.
+4. **Render:** *New → Blueprint →* select the repo. Render reads `render.yaml` (Node web service,
+   region `singapore` next to the Supabase project, health check `/api/health`, auto-deploy on push)
+   and asks for the secrets: `TMDB_API_KEY`, `DATABASE_URL`, `NEXT_PUBLIC_SITE_URL`
+   (`https://<service>.onrender.com`).
 5. **First admin:** register on the live site, then run locally (with the production `DATABASE_URL`):
    `npm run admin:promote -- you@example.com`.
 
-`vercel.json` pins serverless functions to **`icn1` (Seoul)**, next to the Supabase project
-(`ap-northeast-2`). If your Supabase project is in another region, change it to the closest Vercel
-region, because every page makes several database round trips.
+Render's free plan sleeps after about 15 minutes without traffic, so the first request after that
+takes roughly a minute. A paid instance stays awake. The server is a single long-running Node
+process (`next start`), so in-memory caches and rate limits work across requests. Login and
+registration limits are also stored in Postgres.
 
 The app uses node-postgres (`pg`), which sends one query per connection at a time. That matters
 because Supabase's transaction pooler stalls on pipelined queries.
-
-Notes: in-memory caches (TMDB circuit breaker, hidden-movie cache, analytics event rate limit) are
-per serverless instance, which is fine for this use. Login and registration limits are stored in
-Postgres.
 
 ## Scripts
 
