@@ -4,7 +4,7 @@ import { getMovieSummaries } from "./service";
 import { fromSnapshot, type MovieSnapshot, type MovieSummary } from "./types";
 
 /**
- * Renders saved lists (watchlists, collections) with fresh TMDB data in the viewer's language.
+ * Renders saved lists (watchlists, favourites) with fresh TMDB data in the viewer's language.
  * Stored snapshots — themselves copies of earlier TMDB data — are only used while TMDB is
  * unreachable or for titles TMDB no longer returns. Fresh results are written back via `persist`
  * so snapshots stay current (e.g. a poster added on TMDB later).

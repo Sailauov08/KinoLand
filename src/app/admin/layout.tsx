@@ -1,22 +1,18 @@
 import type { Metadata } from "next";
-import { AdminNav } from "@/components/admin/admin-nav";
+import { AdminI18nProvider } from "@/components/admin/admin-i18n";
+import { AdminShell } from "@/components/admin/admin-shell";
 import { requireAdmin } from "@/lib/auth/session";
-import { getT } from "@/lib/i18n/server";
+import { getAdminT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: { default: "Admin", template: "%s · KinoLand Admin" }, robots: { index: false, follow: false } };
 
+/** Every admin route is gated server-side by a database role check (see also each page and action). */
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
-  await requireAdmin();
-  const { t } = await getT();
+  const user = await requireAdmin();
+  const { adminDict } = await getAdminT();
   return (
-    <div className="container-page">
-      <header className="pt-10 pb-6 sm:pt-14">
-        <p className="eyebrow mb-3">KINO</p>
-        <h1 className="font-display text-3xl font-medium tracking-tight sm:text-4xl">{t("admin.title")}</h1>
-        <p className="mt-3 max-w-2xl text-sm text-muted">{t("admin.subtitle")}</p>
-      </header>
-      <AdminNav />
-      <div className="pt-8">{children}</div>
-    </div>
+    <AdminI18nProvider dict={adminDict}>
+      <AdminShell userName={user.name}>{children}</AdminShell>
+    </AdminI18nProvider>
   );
 }

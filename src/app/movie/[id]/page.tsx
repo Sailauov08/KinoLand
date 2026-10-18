@@ -9,7 +9,10 @@ import { MovieCard } from "@/components/movie-card";
 import { MovieRail } from "@/components/movie-rail";
 import { BackdropImage, PosterImage } from "@/components/poster";
 import { RatingPill } from "@/components/rating";
+import { TrackEvent } from "@/components/analytics";
+import { ProviderLinkButton } from "@/components/provider-link";
 import { TrailerPlayer } from "@/components/trailer";
+import { listProviderLinks } from "@/lib/db/content";
 import { buttonClass, SectionHeader } from "@/components/ui";
 import { formatNumber, formatRuntime } from "@/lib/format";
 import { getT } from "@/lib/i18n/server";
@@ -63,8 +66,19 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
     { label: t("movie.originalTitle"), value: movie.originalTitle !== movie.title ? movie.originalTitle : null },
   ].filter((f) => f.value);
 
+  const providers = listProviderLinks(movie.id);
+  const path = `/movie/${movie.id}`;
+
   return (
     <article>
+      <TrackEvent
+        event={{
+          type: "movie_view",
+          path,
+          movieId: movie.id,
+          props: { title: movie.title, genres: movie.genreIds, hasTrailer: !!movie.trailer, hasProvider: providers.length > 0 },
+        }}
+      />
       {/* Backdrop */}
       <section className="relative -mt-16 overflow-hidden">
         <div className="absolute inset-0 h-[70svh] min-h-[460px]">
@@ -141,7 +155,7 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
           <section aria-labelledby="trailer-title" id="trailer" className="scroll-mt-24">
             <SectionHeader id="trailer-title" title={t("movie.trailer")} />
             {movie.trailer ? (
-              <TrailerPlayer videoKey={movie.trailer.key} title={movie.title} />
+              <TrailerPlayer videoKey={movie.trailer.key} title={movie.title} movieId={movie.id} />
             ) : (
               <div className="flex items-center gap-4 rounded-3xl bg-surface p-6 text-sm text-muted ring-1 ring-line">
                 <FilmIcon className="shrink-0 text-subtle" size={28} />
@@ -188,6 +202,16 @@ export default async function MoviePage({ params }: PageProps<"/movie/[id]">) {
                 </div>
               ))}
             </dl>
+            {providers.length ? (
+              <div className="mt-5 border-t border-line pt-5">
+                <h3 className="text-xs font-semibold tracking-wide text-muted uppercase">{t("movie.whereToWatch")}</h3>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {providers.map((p) => (
+                    <ProviderLinkButton key={p.id} movieId={movie.id} title={movie.title} provider={p.provider} url={p.url} region={p.region} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {movie.homepage || movie.imdbId ? (
               <div className="mt-5 flex flex-wrap gap-2">
                 {movie.homepage ? (

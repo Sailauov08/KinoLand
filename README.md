@@ -1,161 +1,156 @@
-# KINO — cinematic movie discovery & watchlist
+# KinoLand — cinematic movie discovery, watchlists & admin dashboard
 
-KINO is a full-stack movie discovery app: featured and trending films, a filterable Top 100, detailed
-film pages with cast and official trailers, advanced search, watchlist & favourites, personal
-recommendations, an editorial admin area, and a full **English / Русский / Қазақша** interface.
+KinoLand is a full-stack movie discovery app: trending and top-rated films, a filterable Top 100,
+detailed film pages with cast and official trailers, advanced search, watchlist & favourites,
+personal recommendations, a full **English / Русский / Қазақша** interface, and a secure
+**administration dashboard** with first-party analytics.
 
-All film data — titles, overviews, ratings, posters, backdrops, cast, directors and trailers — comes
-live from **[TMDB](https://www.themoviedb.org/)**. There is no demo or placeholder catalogue: you only
-need to add a TMDB key to `.env.local`.
+All film data — titles, overviews, ratings, posters, backdrops, cast, directors, trailers — comes live
+from **[TMDB](https://www.themoviedb.org/)**. There is no demo catalogue.
 
 ## Quick start
 
 ```bash
 npm install
-cp .env.example .env.local      # then add your TMDB token (see below)
+cp .env.example .env.local      # add your TMDB credential
 npm run dev                     # http://localhost:3000
 ```
 
-Requires **Node.js 22.13+ (tested on Node 24)** — the database uses Node's built-in `node:sqlite`,
-so there is no native module to compile and no database server to run.
+Requires **Node.js 22.13+ (tested on Node 24)**. The database is SQLite via Node's built-in
+`node:sqlite`, so there's nothing to compile and no database server to run. The schema migrates
+automatically on first start.
 
-### Connecting TMDB (live data)
+### Environment variables (names only)
 
-1. Create a free account at <https://www.themoviedb.org/signup> and request an API key at
-   <https://www.themoviedb.org/settings/api> (choose "Developer", personal/non-commercial use).
-2. Copy the **API Read Access Token** (the long v4 token) into `.env.local`:
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `TMDB_READ_ACCESS_TOKEN` **or** `TMDB_API_KEY` | yes | TMDB API credential (get it at <https://www.themoviedb.org/settings/api>) |
+| `NEXT_PUBLIC_SITE_URL` | production | Base URL for Open Graph links |
+| `POSTHOG_PROJECT_API_KEY`, `POSTHOG_HOST` | optional | Forward consented events to PostHog (server-side) |
+| `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | optional | Show PostHog numbers in `/admin/analytics` (server-only) |
+| `DATABASE_PATH` | optional | SQLite file location (default `data/kino.db`) |
 
-   ```env
-   TMDB_READ_ACCESS_TOKEN=eyJhbGciOi...
+## Administrator access
+
+The dashboard is at **`/admin`**. There is **no public admin sign-up** and no hard-coded admin
+password. Roles are stored in the database and checked server-side on every admin page, API and
+action.
+
+1. Register normally in the app (all new accounts are regular users).
+2. On the server, designate the first administrator once:
+
+   ```bash
+   npm run admin:promote -- you@example.com
    ```
 
-   Alternatively set `TMDB_API_KEY=` to the short v3 key. Only one is needed.
-3. Restart `npm run dev`. Real posters, ratings, cast and trailers load everywhere.
+3. After that, admins can grant or revoke the role in **Admin → Users → Details**. The last active
+   admin can't be demoted or suspended, and admins can't act on their own account.
 
-**Without a key**, pages show a "Connect TMDB" setup card in development (with the exact line to add)
-and the server logs `tmdb.not_configured` once. In a production build, visitors see only a short
-"Movies are unavailable right now" message instead of setup details. The admin page always shows the
-TMDB connection status.
+### Dashboard sections
 
-`.env.local` is gitignored — never commit it. The token is only used server-side; it is never sent to
-the browser or written to logs.
+| Page | What it shows / does |
+| --- | --- |
+| Overview | Registered users, new today/this week, visitors, page views, movie views, searches, watchlist interactions, user-growth/visits/interaction charts, most viewed films, recent errors. Date range: 7d/30d/90d/12m |
+| Users | Search, role/status filters, sorting, pagination; account details; suspend/reactivate (revokes all sessions) and role changes, each behind a confirmation dialog |
+| Analytics | Visits, unique visitors, top pages, events by type; PostHog numbers when configured |
+| Movies | Most viewed pages, popular genres, watchlist/favourite additions, frequently searched, trending interest, trailer/provider availability, playback starts/errors, quick "hide" |
+| Search analytics | Totals, text vs filter searches, zero-result rate, top queries, queries without results |
+| Watchlists | Aggregate list statistics (individual lists stay private) |
+| Content | Homepage banners (localized editorial lines, rotate daily), movie visibility overrides, approved "Where to watch" provider links (https only), homepage section toggles |
+| System health | Database, TMDB API and server status, configured integrations (names only), operational warnings, error trend and recent errors |
+| Settings | Admin bootstrap instructions, analytics retention + purge, environment status, audit log |
 
-### Becoming an administrator
+Every figure is labelled with its source (**KinoLand database**, **first-party analytics** or
+**PostHog**). Nothing is estimated. Empty periods show zeros or an explanation.
 
-Either list your email before registering (or before your next sign-in):
+Admin JSON APIs (`GET /api/admin/overview`, `GET /api/admin/users`) return **401** without a
+session, **403** for non-admins and **429** when rate-limited. They never return password hashes or
+tokens.
 
-```env
-ADMIN_EMAILS=you@example.com
-```
+## Analytics & privacy
 
-…or promote an existing account:
+- **First-party analytics (always on, cookieless):** page views, movie views, searches, watchlist and
+  favourite changes, sign-ups, logins, playback starts/errors. No IP addresses are stored; unique
+  visitors use a SHA-256 hash with a random salt that rotates daily and is then deleted. Query strings
+  are stripped from paths, and search text that looks like an email, phone number or URL is never
+  stored. Bots are ignored. Retention is configurable (default 180 days).
+- **PostHog (optional):** with `POSTHOG_PROJECT_API_KEY` set, a consent prompt appears. Only after
+  "Allow" are the same events forwarded **from the server** with a random consent-scoped id (never an
+  email or account id). No PostHog script runs in the browser, and session recording is never enabled.
+
+Tracked events: `page_view`, `movie_view`, `movie_search`, `watchlist_add`, `watchlist_remove`,
+`favorite_add`, `favorite_remove`, `signup_success`, `login_success`, `playback_started`,
+`playback_error`.
+
+## Database
+
+SQLite file `data/kino.db` (gitignored, persistent across restarts). Migrations live in
+`src/lib/db/migrations.ts` and are additive; v1 data is preserved. A pre-upgrade backup was written
+to `data/backups/`.
+
+| Table | Purpose |
+| --- | --- |
+| `users` | Accounts: id, email, display name, scrypt password hash, role, status, preferences, timestamps |
+| `sessions` | Server-side sessions (only SHA-256 hashes of tokens) |
+| `list_items` | Per-user watchlist and favourites (with a TMDB snapshot) |
+| `events` | First-party analytics events |
+| `daily_salts` | Today's visitor-hash salt (older salts deleted) |
+| `error_log` | Server/client errors for the health dashboard |
+| `audit_log` | Sensitive admin actions |
+| `banners`, `hidden_movies`, `provider_links`, `settings` | KinoLand-owned editorial content and settings |
+| `collections`, `collection_items` | Retired feature; kept only to preserve existing data |
+
+To inspect users safely (no hashes), use **Admin → Users**, or run read-only:
 
 ```bash
-npm run admin:promote -- you@example.com
+node -e "const d=new (require('node:sqlite').DatabaseSync)('data/kino.db',{readOnly:true});console.table(d.prepare('SELECT id,name,role,status,created_at FROM users').all())"
 ```
+
+**Deployment note:** SQLite on local disk suits a single long-running server (VPS, Docker with a
+volume, Railway/Fly with a persistent volume). Serverless hosts like Vercel have an ephemeral
+filesystem, so they'd need a hosted database (e.g. PostgreSQL) instead. That would be a separate
+migration of `src/lib/db/*`.
 
 ## Scripts
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Development server on http://localhost:3000 |
+| `npm run dev` | Development server |
 | `npm run build` / `npm start` | Production build / serve |
-| `npm run typecheck` | `tsc --noEmit` (strict) |
-| `npm run lint` | ESLint (Next.js core-web-vitals + TypeScript rules) |
-| `npm test` | Vitest unit + integration tests |
-| `npm run admin:promote -- <email>` | Grant admin role |
-
-## Features
-
-- **Home** — editorial spotlight hero (admin-chosen, or the week's top trending film), "Picked for you"
-  and "Waiting in your watchlist" rails for signed-in users, trending, featured editorial collections,
-  highest rated, in cinemas, upcoming, and genre "mood" rails (based on your favourite genres).
-- **Top 100** — TMDB's 100 highest-rated films; filter by genre, decade and original language; sort by
-  rank, rating, year or title. Filters live in the URL (shareable, back-button friendly).
-- **Film pages** — backdrop, poster, overview, tagline, genres, year, runtime, TMDB score & vote
-  count, director(s), cast with photos, original title/language, official site / IMDb links, similar
-  films, and the **official YouTube trailer** (privacy-enhanced `youtube-nocookie.com` embed that
-  loads only after you press play).
-- **Search** — title search plus filters for multiple genres, year range, minimum rating, original
-  language and sort order. Without a query it uses TMDB Discover with all filters applied server-side.
-- **Watchlist & favourites** — optimistic toggles everywhere (cards, hero, film page), library page
-  with tabs.
-- **Accounts & profiles** — register / sign in / sign out, display name, interface language,
-  favourite genres, password change (signs out other sessions), activity stats.
-- **Recommendations** — weighted genre affinity (profile genres ×3, favourites ×2, watchlist ×1) over
-  TMDB Discover results and TMDB "recommendations" for your saved films; saved titles are excluded.
-- **Localisation** — complete en / ru / kk interface dictionaries (type-checked for completeness).
-  Locale comes from your choice (cookie, saved on your profile) or the browser's `Accept-Language`.
-  Film titles/overviews are requested from TMDB in the same language; Kazakh synopses fall back to
-  English when TMDB has none (TMDB has few Kazakh translations).
-- **Admin** (`/admin`) — create/edit/delete editorial collections (localised titles & descriptions,
-  slug, publish, feature on home, order), add films via TMDB search and reorder them, choose the
-  homepage spotlight film with a localised editorial line, and manage user roles (the last admin can't
-  be demoted). Admins edit only KINO's own content — TMDB metadata is never modified.
+| `npm run typecheck` | TypeScript strict check |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest suites (unit, DB migration, authorization, analytics privacy) |
+| `npm run admin:promote -- <email>` | One-time server-side admin bootstrap |
 
 ## Architecture
 
 ```
 src/
-  app/                    Next.js App Router pages (server components by default)
-    actions/              Server actions: auth, lists, profile, admin (all validated with zod)
-    admin/ movie/[id]/ top/ search/ library/ for-you/ profile/ collections/ login/ register/
-    error.tsx, global-error.tsx, not-found.tsx, loading.tsx
-  components/             UI (header, hero, cards, rails, filters, trailer, forms, admin widgets)
+  app/                 Pages (public + /admin), server actions, API routes (/api/events, /api/admin/*)
+  components/          Public UI, admin UI (shell, charts, forms), analytics client
   lib/
-    movies/               TMDB client, zod response schemas/mappers, live service, image loader,
-                          filters, recommendation scoring, genres
-    db/                   node:sqlite connection, migrations, repositories
-    auth/                 scrypt password hashing, DB-backed sessions, rate limiting
-    i18n/                 locale config, en/ru/kk dictionaries, server helpers
-  proxy.ts                Optimistic auth redirect for /admin, /library, /profile
-tests/                    Vitest suites
-scripts/promote-admin.mjs
+    admin/             Dashboard queries, date ranges, health checks, PostHog query client
+    analytics/         Privacy rules (sanitize) and server-side tracking/forwarding
+    auth/              scrypt passwords, DB sessions, rate limiting, admin API guard
+    db/                node:sqlite connection, migrations, repositories
+    i18n/              en/ru/kk dictionaries (public + admin)
+    movies/            TMDB client, schemas, live service, image loader
+  proxy.ts             Fast 307 to /login for /admin, /library, /profile without a session
 ```
-
-- **Stack:** Next.js 16 (App Router, Turbopack), React 19, TypeScript strict, Tailwind CSS v4, zod 4,
-  SQLite via `node:sqlite`, Vitest.
-- **Data flow:** every movie call goes through `lib/movies/service.ts`, which returns
-  `{ ok: true, data }` or `{ ok: false, reason: "unconfigured" | "unavailable" }` — never substitute
-  content. Pages render a setup/unavailable state, and home-page rails simply hide. TMDB responses are
-  cached in the Next.js data cache (1 h for lists, 24 h for details). After a TMDB failure, a 60 s
-  circuit breaker fails fast instead of making every page wait on timeouts.
-- **Missing fields:** if TMDB has no Russian/Kazakh synopsis, tagline or artwork for a title, the
-  English values are used. Titles with no poster get a neutral placeholder, and a missing backdrop
-  falls back to the blurred poster or a soft gradient.
-- **Images:** `next/image` with a custom loader (`lib/movies/tmdb-image-loader.ts`) maps each srcset
-  width to the nearest pre-sized TMDB rendition (`w92`…`w1280`, `original`), served straight from
-  TMDB's CDN, so the server never re-encodes images. Broken images swap to the placeholder.
-- **Caching model:** `cacheComponents` is disabled on purpose. Every page depends on per-request
-  cookies (locale + session), so the classic model with `fetch` revalidation is simpler and correct.
-- **Persistence:** `data/kino.db` (gitignored). Tables: users, sessions, list_items, collections,
-  collection_items, settings. List/collection rows store a small movie snapshot so they render even
-  when TMDB is unreachable; pages refresh them from TMDB in the current language and write the
-  fresh data back.
-- **Security:** scrypt password hashes, random 256-bit session tokens stored only as SHA-256 hashes,
-  httpOnly + SameSite=Lax cookies (Secure in production), login/registration rate limiting,
-  constant-time password checks, open-redirect-safe `next` handling, server-side re-authorisation in
-  every server action, admin role checks on every admin page/action, zod validation at all
-  boundaries, security headers (`X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`,
-  `Permissions-Policy`), and structured JSON logs that never include secrets.
 
 ## Content & licensing
 
-- Uses the TMDB API under its terms. Attribution is shown in the footer: *"This product uses the TMDB
-  API but is not endorsed or certified by TMDB."* Review TMDB's
-  [terms of use](https://www.themoviedb.org/api-terms-of-use) before commercial use.
-- Trailers are TMDB-listed official YouTube videos embedded via YouTube's player. KINO does not
-  host, scrape or stream films.
+- Uses the TMDB API under its terms. The official TMDB logo and the notice *"KinoLand uses TMDB and
+  the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB."* appear in the footer
+  on every page; full credits are on `/about`.
+- Trailers are official YouTube videos listed on TMDB. "Where to watch" links point only to
+  admin-approved https pages of legitimate services. KinoLand never hosts or streams films.
 
 ## Known limitations
 
-- SQLite + in-memory rate limiting and circuit breaker assume a **single server instance**. For
-  multi-instance or serverless hosting, move to PostgreSQL and a shared store (e.g. Redis).
-- Hosts with an ephemeral filesystem (e.g. Vercel) need a persistent volume or an external database
-  for `data/kino.db`.
-- Routes with `loading.tsx` stream, so `notFound()`/`redirect()` inside them respond with HTTP 200 +
-  the not-found UI (with `noindex`) or a client-side redirect. Private areas also get a real 307 from
-  `proxy.ts`.
-- No email verification or password-reset email flow (needs an email provider).
-- Text search can't be combined with TMDB-side genre/rating filters (a TMDB API limitation). Those
-  filters are applied to the matching titles on the current results page, and the UI says so.
+- Single-instance storage (SQLite, in-memory rate limits). See the deployment note.
+- No email verification or password reset by email (needs an email provider).
+- Routes with streaming loading states return HTTP 200 with a not-found page or client redirect.
+  Private areas also get a real 307 from `proxy.ts`.
+- PostHog numbers in the dashboard need a personal API key, and PostHog only receives consented
+  visitors, so it reports less than first-party analytics.

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import { sendEvent } from "./analytics";
 import { useI18n } from "./i18n-provider";
 import { PlayIcon } from "./icons";
 
@@ -9,7 +10,7 @@ import { PlayIcon } from "./icons";
  * Click-to-load YouTube embed (privacy-enhanced youtube-nocookie domain). Nothing from YouTube is
  * requested until the viewer presses play, except the static thumbnail.
  */
-export function TrailerPlayer({ videoKey, title }: { videoKey: string; title: string }) {
+export function TrailerPlayer({ videoKey, title, movieId }: { videoKey: string; title: string; movieId: number }) {
   const { t } = useI18n();
   const [playing, setPlaying] = useState(false);
   const safeKey = /^[\w-]{6,20}$/.test(videoKey) ? videoKey : null;
@@ -28,7 +29,10 @@ export function TrailerPlayer({ videoKey, title }: { videoKey: string; title: st
       ) : (
         <button
           type="button"
-          onClick={() => setPlaying(true)}
+          onClick={() => {
+            setPlaying(true);
+            sendEvent({ type: "playback_started", path: location.pathname, movieId, props: { source: "trailer", title } });
+          }}
           className="group absolute inset-0 size-full text-left"
           aria-label={`${t("movie.playTrailer")}: ${title}`}
         >
@@ -39,6 +43,7 @@ export function TrailerPlayer({ videoKey, title }: { videoKey: string; title: st
             sizes="(min-width: 1024px) 60vw, 100vw"
             className="object-cover opacity-70 transition duration-700 group-hover:scale-[1.03] group-hover:opacity-85"
             unoptimized
+            onError={() => sendEvent({ type: "playback_error", path: location.pathname, movieId, props: { source: "trailer", title, reason: "thumbnail_unavailable" } })}
           />
           <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/10" />
           <span className="absolute inset-0 grid place-items-center">

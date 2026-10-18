@@ -20,6 +20,7 @@ import {
   ShieldIcon,
   UserIcon,
 } from "./icons";
+import { Logo } from "./logo";
 import { buttonClass } from "./ui";
 
 export interface HeaderUser {
@@ -31,7 +32,6 @@ const NAV = [
   { href: "/", key: "nav.home" },
   { href: "/top", key: "nav.top" },
   { href: "/search", key: "nav.search" },
-  { href: "/collections", key: "nav.collections" },
   { href: "/for-you", key: "nav.forYou" },
 ] as const;
 
@@ -94,13 +94,8 @@ export function Header({ user }: { user: HeaderUser | null }) {
       )}
     >
       <div className="container-page flex h-16 items-center gap-3 lg:gap-8">
-        <Link href="/" className="group flex items-center gap-2 rounded-md" aria-label="KINO">
-          <span aria-hidden className="grid size-8 place-items-center rounded-lg bg-accent text-accent-ink transition group-hover:rotate-[-6deg]">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-              <path d="M4 5h3v14H4zM9.5 12 17 5h3.5l-7.6 7 7.6 7H17z" />
-            </svg>
-          </span>
-          <span className="font-display text-lg font-semibold tracking-[0.18em]">KINO</span>
+        <Link href="/" className="group flex items-center rounded-md" aria-label="KinoLand">
+          <Logo />
         </Link>
 
         <nav aria-label="Main" className="hidden lg:block">

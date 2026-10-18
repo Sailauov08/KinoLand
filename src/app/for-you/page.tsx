@@ -22,7 +22,7 @@ export default async function ForYouPage() {
   const [{ locale, t }, user] = await Promise.all([getT(), getCurrentUser()]);
   return (
     <div className="container-page">
-      <PageHeader title={t("forYou.title")} eyebrow="KINO" subtitle={t("forYou.subtitle")} />
+      <PageHeader title={t("forYou.title")} eyebrow="KinoLand" subtitle={t("forYou.subtitle")} />
       {user ? (
         <Suspense fallback={<GridSkeleton />}>
           <Recommendations user={user} locale={locale} t={t} />

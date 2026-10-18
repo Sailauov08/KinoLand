@@ -2,11 +2,11 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { env } from "@/lib/env";
+import { trackServer } from "@/lib/analytics/server";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { rateLimit } from "@/lib/auth/rate-limit";
 import { createSession, destroySession, safeNextPath } from "@/lib/auth/session";
-import { createUser, findUserByEmail, setUserRole } from "@/lib/db/users";
+import { createUser, findUserByEmail } from "@/lib/db/users";
 import { LOCALE_COOKIE } from "@/lib/i18n/config";
 import { getLocale } from "@/lib/i18n/server";
 import { logger } from "@/lib/logger";
@@ -27,6 +27,7 @@ async function setLocaleCookie(locale: string | null) {
   (await cookies()).set(LOCALE_COOKIE, locale, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
 }
 
+/** Public registration always creates a regular user — there is no way to self-register as admin. */
 export async function registerAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const parsed = registerSchema.safeParse({
     name: formData.get("name"),
@@ -40,16 +41,10 @@ export async function registerAction(_prev: FormState, formData: FormData): Prom
   if (!rateLimit(`register:${await clientKey("")}`, 10, 60 * 60 * 1000)) return { error: "auth.rateLimited", values };
   if (findUserByEmail(email)) return { error: "auth.emailTaken", fields: { email: true }, values };
 
-  const locale = await getLocale();
-  const user = createUser({
-    email,
-    name,
-    passwordHash: await hashPassword(password),
-    role: env.adminEmails.has(email) ? "admin" : "user",
-    locale,
-  });
-  logger.info("auth.registered", { userId: user.id, role: user.role });
+  const user = createUser({ email, name, passwordHash: await hashPassword(password), locale: await getLocale() });
+  logger.info("auth.registered", { userId: user.id });
   await createSession(user.id);
+  await trackServer("signup_success", { userId: user.id });
   redirect(safeNextPath(formData.get("next")));
 }
 
@@ -67,12 +62,15 @@ export async function loginAction(_prev: FormState, formData: FormData): Promise
     logger.info("auth.login_failed");
     return { error: "auth.invalidCredentials", values };
   }
-  // Promote configured admin emails on sign-in (lets ADMIN_EMAILS be set after registration).
-  if (env.adminEmails.has(user.email) && user.role !== "admin") setUserRole(user.id, "admin");
+  if (user.status !== "active") {
+    logger.info("auth.login_suspended", { userId: user.id });
+    return { error: "auth.suspended", values };
+  }
 
   await createSession(user.id);
   await setLocaleCookie(user.locale);
   logger.info("auth.login", { userId: user.id });
+  await trackServer("login_success", { userId: user.id });
   redirect(safeNextPath(formData.get("next")));
 }
 

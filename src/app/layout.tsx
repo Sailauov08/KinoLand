@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Manrope, Unbounded } from "next/font/google";
+import { AnalyticsProvider } from "@/components/analytics";
 import { Footer } from "@/components/footer";
+import { SiteChrome } from "@/components/site-chrome";
+import { isPosthogConfigured } from "@/lib/env";
 import { Header } from "@/components/header";
 import { I18nProvider } from "@/components/i18n-provider";
 import { ListStateProvider } from "@/components/list-state";
@@ -25,9 +28,12 @@ const unbounded = Unbounded({
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getT();
   return {
-    title: { default: `KINO — ${t("meta.tagline")}`, template: "%s · KINO" },
+    metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
+    title: { default: `KinoLand — ${t("meta.tagline")}`, template: "%s · KinoLand" },
     description: t("meta.description"),
-    applicationName: "KINO",
+    applicationName: "KinoLand",
+    openGraph: { siteName: "KinoLand", type: "website", title: `KinoLand — ${t("meta.tagline")}`, description: t("meta.description") },
+    twitter: { card: "summary_large_image" },
   };
 }
 
@@ -51,11 +57,16 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             >
               {t("nav.skip")}
             </a>
-            <Header user={user ? { name: user.name, role: user.role } : null} />
+            <SiteChrome>
+              <Header user={user ? { name: user.name, role: user.role } : null} />
+            </SiteChrome>
             <main id="main" className="w-full min-w-0 flex-1">
               {children}
             </main>
-            <Footer t={t} />
+            <SiteChrome>
+              <Footer t={t} />
+            </SiteChrome>
+            <AnalyticsProvider posthogEnabled={isPosthogConfigured()} />
           </ListStateProvider>
         </I18nProvider>
       </body>

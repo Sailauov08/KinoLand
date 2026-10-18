@@ -56,6 +56,87 @@ const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+  // v2 — KinoLand admin platform. Additive only: no existing table or row is dropped or rewritten.
+  // (The v1 `collections` tables are kept for data preservation even though the feature was retired.)
+  `
+  ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended'));
+  ALTER TABLE users ADD COLUMN last_seen_at INTEGER;
+  CREATE INDEX users_created_idx ON users(created_at);
+
+  -- First-party, privacy-preserving analytics. visitor_hash is a daily-rotating salted hash
+  -- (no IP addresses or raw identifiers are stored).
+  CREATE TABLE events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    visitor_hash TEXT,
+    user_id TEXT,
+    path TEXT,
+    movie_id INTEGER,
+    props TEXT
+  );
+  CREATE INDEX events_type_time_idx ON events(type, created_at);
+  CREATE INDEX events_movie_idx ON events(movie_id, type);
+
+  CREATE TABLE daily_salts (
+    day TEXT PRIMARY KEY,
+    salt TEXT NOT NULL
+  );
+
+  CREATE TABLE error_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('server','client')),
+    event TEXT NOT NULL,
+    message TEXT,
+    path TEXT
+  );
+  CREATE INDEX error_log_time_idx ON error_log(created_at);
+
+  CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    actor_id TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    details TEXT
+  );
+  CREATE INDEX audit_log_time_idx ON audit_log(created_at);
+
+  CREATE TABLE banners (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    movie_id INTEGER NOT NULL,
+    headline TEXT NOT NULL DEFAULT '{}',
+    description TEXT NOT NULL DEFAULT '{}',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE hidden_movies (
+    movie_id INTEGER PRIMARY KEY,
+    reason TEXT,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE provider_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    movie_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    url TEXT NOT NULL,
+    region TEXT,
+    created_at INTEGER NOT NULL,
+    UNIQUE (movie_id, provider)
+  );
+
+  -- Carry the v1 homepage spotlight over as the first banner (the settings row is kept).
+  INSERT INTO banners (movie_id, headline, description, is_active, position, created_at, updated_at)
+  SELECT json_extract(value, '$.movieId'), '{}', COALESCE(json_extract(value, '$.tagline'), '{}'), 1, 0,
+         CAST(strftime('%s','now') AS INTEGER) * 1000, CAST(strftime('%s','now') AS INTEGER) * 1000
+  FROM settings WHERE key = 'spotlight' AND json_valid(value);
+  `,
 ];
 
 export function migrate(db: DatabaseSync) {

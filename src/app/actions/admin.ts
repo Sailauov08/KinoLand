@@ -1,168 +1,212 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getCurrentUser } from "@/lib/auth/session";
-import {
-  addCollectionItem,
-  createCollection,
-  deleteCollection,
-  getCollectionById,
-  moveCollectionItem,
-  removeCollectionItem,
-  slugExists,
-  updateCollection,
-} from "@/lib/db/collections";
-import { setSpotlight } from "@/lib/db/settings";
-import { countAdmins, findUserById, setUserRole } from "@/lib/db/users";
-import { getLocale } from "@/lib/i18n/server";
+import { ForbiddenError } from "@/lib/auth/admin-guard";
+import { getCurrentUser, revokeAllSessions } from "@/lib/auth/session";
+import { logAudit } from "@/lib/db/audit";
+import { deleteBanner, deleteProviderLink, getBanner, hideMovie, saveBanner, unhideMovie, upsertProviderLink } from "@/lib/db/content";
+import { deleteEventsBefore } from "@/lib/db/events";
+import { displaySettingsSchema, setDisplaySettings, setRetentionDays } from "@/lib/db/settings";
+import { countActiveAdmins, findUserById, setUserRole, setUserStatus } from "@/lib/db/users";
+import type { AdminKey } from "@/lib/i18n/admin";
 import { logger } from "@/lib/logger";
-import { parseFilters } from "@/lib/movies/filters";
-import { getMovie, searchMovies } from "@/lib/movies/service";
-import { toSnapshot, type MovieSummary, type UnavailableReason } from "@/lib/movies/types";
-import { collectionSchema, fieldErrors, movieIdSchema, spotlightInputSchema } from "@/lib/validation";
-import type { FormState } from "./types";
+import { getMovie } from "@/lib/movies/service";
+import { movieIdSchema } from "@/lib/validation";
 
-/** Every admin action re-checks the role server-side; UI visibility is not authorisation. */
+export interface AdminFormState {
+  ok?: boolean;
+  error?: AdminKey;
+  message?: AdminKey;
+  vars?: Record<string, string | number>;
+  fields?: Record<string, true>;
+}
+
+/** Re-verifies the session and admin role from the database on every call. */
 async function assertAdmin() {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") throw new Error("Forbidden");
+  if (!user || user.role !== "admin") {
+    logger.warn("admin.forbidden_action", { userId: user?.id ?? null });
+    throw new ForbiddenError();
+  }
   return user;
 }
 
-const idSchema = z.coerce.number().int().positive();
+const uuid = z.string().uuid();
+const text = (max: number) => z.string().trim().max(max).optional().transform((v) => v || undefined);
+const localizedText = (max: number) => z.object({ en: text(max), ru: text(max), kk: text(max) });
+const read = (fd: FormData, key: string) => (fd.get(key) ?? "").toString();
 
-function revalidateEditorial(slug?: string) {
-  revalidatePath("/");
-  revalidatePath("/collections");
-  if (slug) revalidatePath(`/collections/${slug}`);
-  revalidatePath("/admin");
-}
+/* ── Users ─────────────────────────────────────────────────────────────── */
 
-export async function saveCollectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function setUserStatusAction(_prev: AdminFormState, fd: FormData): Promise<AdminFormState> {
   const admin = await assertAdmin();
-  const parsed = collectionSchema.safeParse({
-    slug: formData.get("slug"),
-    title: { en: formData.get("title_en"), ru: formData.get("title_ru") ?? "", kk: formData.get("title_kk") ?? "" },
-    description: {
-      en: formData.get("description_en") ?? "",
-      ru: formData.get("description_ru") ?? "",
-      kk: formData.get("description_kk") ?? "",
-    },
-    isPublished: formData.get("isPublished") === "on",
-    isFeatured: formData.get("isFeatured") === "on",
-    position: formData.get("position") || 0,
-  });
-  if (!parsed.success) return { error: "auth.invalidInput", fields: fieldErrors(parsed.error) };
-
-  const rawId = formData.get("id");
-  const id = rawId ? idSchema.safeParse(rawId) : null;
-  if (id && !id.success) return { error: "auth.invalidInput" };
-  const existingId = id?.data;
-
-  if (slugExists(parsed.data.slug, existingId)) return { error: "admin.slugTaken", fields: { slug: true } };
-
-  if (existingId) {
-    const before = getCollectionById(existingId);
-    if (!before) return { error: "auth.invalidInput" };
-    updateCollection(existingId, parsed.data);
-    logger.info("admin.collection_updated", { adminId: admin.id, collectionId: existingId });
-    revalidateEditorial(before.slug);
-    revalidateEditorial(parsed.data.slug);
-    return { ok: true, message: "admin.saved" };
-  }
-  const newId = createCollection(parsed.data);
-  logger.info("admin.collection_created", { adminId: admin.id, collectionId: newId });
-  revalidateEditorial(parsed.data.slug);
-  redirect(`/admin/collections/${newId}`);
-}
-
-export async function deleteCollectionAction(formData: FormData) {
-  const admin = await assertAdmin();
-  const id = idSchema.parse(formData.get("id"));
-  const c = getCollectionById(id);
-  deleteCollection(id);
-  logger.info("admin.collection_deleted", { adminId: admin.id, collectionId: id });
-  revalidateEditorial(c?.slug);
-  redirect("/admin");
-}
-
-export async function addCollectionItemAction(rawCollectionId: unknown, rawMovieId: unknown): Promise<{ ok: boolean }> {
-  await assertAdmin();
-  const collectionId = idSchema.parse(rawCollectionId);
-  const movieId = movieIdSchema.parse(rawMovieId);
-  const c = getCollectionById(collectionId);
-  if (!c) return { ok: false };
-  const res = await getMovie(movieId, "en");
-  if (!res.ok || !res.data) return { ok: false };
-  addCollectionItem(collectionId, toSnapshot(res.data));
-  revalidateEditorial(c.slug);
-  revalidatePath(`/admin/collections/${collectionId}`);
-  return { ok: true };
-}
-
-export async function removeCollectionItemAction(formData: FormData) {
-  await assertAdmin();
-  const collectionId = idSchema.parse(formData.get("collectionId"));
-  const movieId = movieIdSchema.parse(formData.get("movieId"));
-  removeCollectionItem(collectionId, movieId);
-  revalidateEditorial(getCollectionById(collectionId)?.slug);
-  revalidatePath(`/admin/collections/${collectionId}`);
-}
-
-export async function moveCollectionItemAction(formData: FormData) {
-  await assertAdmin();
-  const collectionId = idSchema.parse(formData.get("collectionId"));
-  const movieId = movieIdSchema.parse(formData.get("movieId"));
-  const direction = z.enum(["up", "down"]).parse(formData.get("direction"));
-  moveCollectionItem(collectionId, movieId, direction);
-  revalidateEditorial(getCollectionById(collectionId)?.slug);
-  revalidatePath(`/admin/collections/${collectionId}`);
-}
-
-/** Title search used by the admin movie picker. */
-export async function adminSearchAction(query: unknown): Promise<{ results: MovieSummary[]; unavailable?: UnavailableReason }> {
-  await assertAdmin();
-  const q = z.string().trim().min(1).max(100).safeParse(query);
-  if (!q.success) return { results: [] };
-  const res = await searchMovies(parseFilters({ q: q.data }), await getLocale());
-  if (!res.ok) return { results: [], unavailable: res.reason };
-  return { results: res.data.results.slice(0, 12) };
-}
-
-export async function saveSpotlightAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const admin = await assertAdmin();
-  const parsed = spotlightInputSchema.safeParse({
-    movieId: formData.get("movieId"),
-    tagline: { en: formData.get("tagline_en") ?? "", ru: formData.get("tagline_ru") ?? "", kk: formData.get("tagline_kk") ?? "" },
-  });
-  if (!parsed.success) return { error: "auth.invalidInput", fields: fieldErrors(parsed.error) };
-  const movie = await getMovie(parsed.data.movieId, "en");
-  if (!movie.ok) return { error: "unavailable.title" };
-  if (!movie.data) return { error: "admin.notFoundMovie", fields: { movieId: true } };
-  setSpotlight(parsed.data);
-  logger.info("admin.spotlight_set", { adminId: admin.id, movieId: parsed.data.movieId });
-  revalidateEditorial();
-  return { ok: true, message: "admin.saved" };
-}
-
-export async function clearSpotlightAction() {
-  await assertAdmin();
-  setSpotlight(null);
-  revalidateEditorial();
-}
-
-export async function setRoleAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const admin = await assertAdmin();
-  const userId = z.string().uuid().safeParse(formData.get("userId"));
-  const role = z.enum(["user", "admin"]).safeParse(formData.get("role"));
-  if (!userId.success || !role.success) return { error: "auth.invalidInput" };
+  const userId = uuid.safeParse(fd.get("userId"));
+  const status = z.enum(["active", "suspended"]).safeParse(fd.get("status"));
+  if (!userId.success || !status.success) return { error: "action.invalid" };
+  if (userId.data === admin.id) return { error: "action.self" };
   const target = findUserById(userId.data);
-  if (!target) return { error: "auth.invalidInput" };
-  if (role.data === "user" && target.role === "admin" && countAdmins() <= 1) return { error: "admin.lastAdmin" };
+  if (!target) return { error: "action.invalid" };
+  if (status.data === "suspended" && target.role === "admin" && target.status === "active" && countActiveAdmins() <= 1) return { error: "action.lastAdmin" };
+
+  setUserStatus(target.id, status.data);
+  const revoked = status.data === "suspended" ? revokeAllSessions(target.id) : 0;
+  logAudit({ actorId: admin.id, action: status.data === "suspended" ? "user.suspend" : "user.reactivate", targetType: "user", targetId: target.id, details: { revokedSessions: revoked } });
+  revalidatePath("/admin/users", "layout");
+  return { ok: true, message: "action.saved" };
+}
+
+export async function setUserRoleAction(_prev: AdminFormState, fd: FormData): Promise<AdminFormState> {
+  const admin = await assertAdmin();
+  const userId = uuid.safeParse(fd.get("userId"));
+  const role = z.enum(["user", "admin"]).safeParse(fd.get("role"));
+  if (!userId.success || !role.success) return { error: "action.invalid" };
+  if (userId.data === admin.id) return { error: "action.self" };
+  const target = findUserById(userId.data);
+  if (!target) return { error: "action.invalid" };
+  if (role.data === "user" && target.role === "admin" && target.status === "active" && countActiveAdmins() <= 1) return { error: "action.lastAdmin" };
+
   setUserRole(target.id, role.data);
-  logger.info("admin.role_changed", { adminId: admin.id, userId: target.id, role: role.data });
-  revalidatePath("/admin/users");
-  return { ok: true, message: "admin.saved" };
+  logAudit({ actorId: admin.id, action: role.data === "admin" ? "user.grant_admin" : "user.revoke_admin", targetType: "user", targetId: target.id });
+  revalidatePath("/admin/users", "layout");
+  return { ok: true, message: "action.saved" };
+}
+
+/* ── Content: banners ─────────────────────────────────────────────────── */
+
+async function verifyMovie(movieId: number): Promise<AdminKey | null> {
+  const res = await getMovie(movieId, "en");
+  if (!res.ok) return "content.movieUnavailable";
+  return res.data ? null : "content.movieNotFound";
+}
+
+export async function saveBannerAction(_prev: AdminFormState, fd: FormData): Promise<AdminFormState> {
+  const admin = await assertAdmin();
+  const parsed = z
+    .object({
+      id: z.coerce.number().int().positive().optional(),
+      movieId: movieIdSchema,
+      headline: localizedText(60),
+      description: localizedText(200),
+      isActive: z.boolean(),
+      position: z.coerce.number().int().min(0).max(999),
+    })
+    .safeParse({
+      id: read(fd, "id") || undefined,
+      movieId: read(fd, "movieId"),
+      headline: { en: read(fd, "headline_en"), ru: read(fd, "headline_ru"), kk: read(fd, "headline_kk") },
+      description: { en: read(fd, "description_en"), ru: read(fd, "description_ru"), kk: read(fd, "description_kk") },
+      isActive: fd.get("isActive") === "on",
+      position: read(fd, "position") || 0,
+    });
+  if (!parsed.success) return { error: "action.invalid", fields: Object.fromEntries(parsed.error.issues.map((i) => [i.path.join("."), true as const])) };
+  if (parsed.data.id && !getBanner(parsed.data.id)) return { error: "action.invalid" };
+  const movieError = await verifyMovie(parsed.data.movieId);
+  if (movieError) return { error: movieError, fields: { movieId: true } };
+
+  const id = saveBanner(parsed.data);
+  logAudit({ actorId: admin.id, action: parsed.data.id ? "banner.update" : "banner.create", targetType: "banner", targetId: id, details: { movieId: parsed.data.movieId, active: parsed.data.isActive } });
+  revalidatePath("/", "layout");
+  return { ok: true, message: "action.saved" };
+}
+
+export async function deleteBannerAction(fd: FormData) {
+  const admin = await assertAdmin();
+  const id = z.coerce.number().int().positive().parse(fd.get("id"));
+  deleteBanner(id);
+  logAudit({ actorId: admin.id, action: "banner.delete", targetType: "banner", targetId: id });
+  revalidatePath("/", "layout");
+}
+
+/* ── Content: visibility overrides ───────────────────────────────────── */
+
+export async function hideMovieAction(_prev: AdminFormState, fd: FormData): Promise<AdminFormState> {
+  const admin = await assertAdmin();
+  const movieId = movieIdSchema.safeParse(fd.get("movieId"));
+  const reason = z.string().trim().max(200).safeParse(read(fd, "reason"));
+  if (!movieId.success || !reason.success) return { error: "action.invalid", fields: { movieId: true } };
+  hideMovie(movieId.data, reason.data || null);
+  logAudit({ actorId: admin.id, action: "movie.hide", targetType: "movie", targetId: movieId.data, details: reason.data ? { reason: reason.data } : undefined });
+  revalidatePath("/", "layout");
+  return { ok: true, message: "action.saved" };
+}
+
+export async function unhideMovieAction(fd: FormData) {
+  const admin = await assertAdmin();
+  const movieId = movieIdSchema.parse(fd.get("movieId"));
+  unhideMovie(movieId);
+  logAudit({ actorId: admin.id, action: "movie.unhide", targetType: "movie", targetId: movieId });
+  revalidatePath("/", "layout");
+}
+
+/* ── Content: approved provider links ────────────────────────────────── */
+
+const providerUrl = z
+  .string()
+  .trim()
+  .max(500)
+  .url()
+  .refine((u) => {
+    try {
+      const url = new URL(u);
+      // Public https pages only: no plain http, credentials, IP literals or local hosts.
+      return url.protocol === "https:" && !url.username && !url.password && url.hostname.includes(".") && !/^[\d.]+$|^\[/.test(url.hostname) && !/localhost$/i.test(url.hostname);
+    } catch {
+      return false;
+    }
+  });
+
+export async function addProviderLinkAction(_prev: AdminFormState, fd: FormData): Promise<AdminFormState> {
+  const admin = await assertAdmin();
+  const parsed = z
+    .object({
+      movieId: movieIdSchema,
+      provider: z.string().trim().min(2).max(40),
+      url: providerUrl,
+      region: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/).optional().or(z.literal("").transform(() => undefined)),
+    })
+    .safeParse({ movieId: read(fd, "movieId"), provider: read(fd, "provider"), url: read(fd, "url"), region: read(fd, "region") });
+  if (!parsed.success) return { error: "action.invalid", fields: Object.fromEntries(parsed.error.issues.map((i) => [i.path.join("."), true as const])) };
+  const movieError = await verifyMovie(parsed.data.movieId);
+  if (movieError) return { error: movieError, fields: { movieId: true } };
+
+  upsertProviderLink({ ...parsed.data, region: parsed.data.region ?? null });
+  logAudit({ actorId: admin.id, action: "provider.upsert", targetType: "movie", targetId: parsed.data.movieId, details: { provider: parsed.data.provider, host: new URL(parsed.data.url).hostname } });
+  revalidatePath(`/movie/${parsed.data.movieId}`);
+  revalidatePath("/admin/content");
+  return { ok: true, message: "action.saved" };
+}
+
+export async function deleteProviderLinkAction(fd: FormData) {
+  const admin = await assertAdmin();
+  const id = z.coerce.number().int().positive().parse(fd.get("id"));
+  const removed = deleteProviderLink(id);
+  logAudit({ actorId: admin.id, action: "provider.delete", targetType: "movie", targetId: removed?.movieId, details: removed ? { provider: removed.provider } : undefined });
+  if (removed) revalidatePath(`/movie/${removed.movieId}`);
+  revalidatePath("/admin/content");
+}
+
+/* ── Content: display settings ───────────────────────────────────────── */
+
+export async function saveDisplaySettingsAction(_prev: AdminFormState, fd: FormData): Promise<AdminFormState> {
+  const admin = await assertAdmin();
+  const keys = Object.keys(displaySettingsSchema.shape) as (keyof typeof displaySettingsSchema.shape)[];
+  const value = displaySettingsSchema.parse(Object.fromEntries(keys.map((k) => [k, fd.get(k) === "on"])));
+  setDisplaySettings(value);
+  logAudit({ actorId: admin.id, action: "settings.display", details: value });
+  revalidatePath("/", "layout");
+  return { ok: true, message: "action.saved" };
+}
+
+/* ── Settings: analytics retention ───────────────────────────────────── */
+
+export async function purgeEventsAction(_prev: AdminFormState, fd: FormData): Promise<AdminFormState> {
+  const admin = await assertAdmin();
+  const days = z.coerce.number().int().min(7).max(730).safeParse(fd.get("days"));
+  if (!days.success) return { error: "action.invalid", fields: { days: true } };
+  setRetentionDays(days.data);
+  const deleted = deleteEventsBefore(Date.now() - days.data * 86_400_000);
+  logAudit({ actorId: admin.id, action: "analytics.purge", details: { retentionDays: days.data, deleted } });
+  revalidatePath("/admin", "layout");
+  return { ok: true, message: "action.purged", vars: { n: deleted } };
 }

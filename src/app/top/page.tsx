@@ -33,7 +33,7 @@ export default async function TopPage({ searchParams }: PageProps<"/top">) {
   if (!res.ok) {
     return (
       <div className="container-page">
-        <PageHeader title={t("top.title")} eyebrow="KINO" subtitle={t("top.subtitle")} />
+        <PageHeader title={t("top.title")} eyebrow="KinoLand" subtitle={t("top.subtitle")} />
         <MoviesUnavailable reason={res.reason} t={t} />
       </div>
     );
@@ -60,7 +60,7 @@ export default async function TopPage({ searchParams }: PageProps<"/top">) {
 
   return (
     <div className="container-page">
-      <PageHeader title={t("top.title")} eyebrow="KINO" subtitle={t("top.subtitle")} />
+      <PageHeader title={t("top.title")} eyebrow="KinoLand" subtitle={t("top.subtitle")} />
       <FilterPanel
         mode="top"
         values={{ genres: genre ? [genre] : [], decade: decade.success ? decade.data : null, lang: filters.language, sort }}

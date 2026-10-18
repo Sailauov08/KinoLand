@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { sendEvent } from "@/components/analytics";
 import { useI18n } from "@/components/i18n-provider";
 import { InfoIcon } from "@/components/icons";
 import { Button, EmptyState, LinkButton } from "@/components/ui";
@@ -9,6 +10,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
   const { t } = useI18n();
   useEffect(() => {
     console.error(error);
+    sendEvent({ type: "client_error", path: location.pathname, props: { message: String(error.message || "Unknown error").slice(0, 500), digest: error.digest } });
   }, [error]);
   return (
     <div className="container-page py-20">

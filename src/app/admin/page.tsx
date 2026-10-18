@@ -1,105 +1,103 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SpotlightForm } from "@/components/admin/spotlight-form";
-import { PlusIcon } from "@/components/icons";
-import { Badge, EmptyState, LinkButton } from "@/components/ui";
+import { BarList, TimeSeriesChart } from "@/components/admin/charts";
+import { AdminPageHeader, EmptyNote, Panel, RangeTabs, StatCard } from "@/components/admin/ui";
+import { overviewData } from "@/lib/admin/queries";
+import { parseRange } from "@/lib/admin/range";
 import { requireAdmin } from "@/lib/auth/session";
-import { listCollections, localized } from "@/lib/db/collections";
-import { getSpotlight } from "@/lib/db/settings";
-import { formatDate } from "@/lib/format";
-import { getT } from "@/lib/i18n/server";
-import { getMovie } from "@/lib/movies/service";
-import { isTmdbConfigured } from "@/lib/env";
+import { localeTags } from "@/lib/i18n/config";
+import { getAdminT } from "@/lib/i18n/server";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { t } = await getT();
-  return { title: t("admin.title") };
+  const { at } = await getAdminT();
+  return { title: at("overview.title") };
 }
 
-export default async function AdminPage() {
-  await requireAdmin();
-  const { locale, t } = await getT();
-  const collections = listCollections();
-  const spotlight = getSpotlight();
-  const spotlightRes = spotlight ? await getMovie(spotlight.movieId, locale) : null;
-  const spotlightMovie = spotlightRes?.ok ? spotlightRes.data : null;
-  const tmdbReady = isTmdbConfigured();
+export default async function AdminOverviewPage({ searchParams }: PageProps<"/admin">) {
+  await requireAdmin("/admin");
+  const { at, locale } = await getAdminT();
+  const range = parseRange((await searchParams).range);
+  const d = overviewData(range);
+  const tag = localeTags[locale];
+  const fmt = (n: number) => n.toLocaleString(tag);
+  const time = (ts: number) => new Date(ts).toLocaleString(tag, { dateStyle: "medium", timeStyle: "short" });
 
   return (
-    <div className="grid gap-10 xl:grid-cols-[1fr_400px]">
-      <section aria-labelledby="collections-heading" className="min-w-0">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <h2 id="collections-heading" className="font-display text-lg font-medium">{t("admin.collections")}</h2>
-          <LinkButton href="/admin/collections/new" size="sm">
-            <PlusIcon size={16} /> {t("admin.newCollection")}
-          </LinkButton>
-        </div>
-        {collections.length ? (
-          <div className="relative overflow-x-auto rounded-3xl ring-1 ring-line">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead className="bg-surface-2 text-xs tracking-wide text-muted uppercase">
-                <tr>
-                  <th scope="col" className="px-4 py-3 font-semibold">{t("admin.titleField", { lang: "EN" })}</th>
-                  <th scope="col" className="px-4 py-3 font-semibold">{t("admin.items")}</th>
-                  <th scope="col" className="px-4 py-3 font-semibold">{t("admin.published")}</th>
-                  <th scope="col" className="px-4 py-3 font-semibold">{t("admin.updated")}</th>
-                  <th scope="col" className="px-4 py-3"><span className="sr-only">{t("admin.edit")}</span></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line bg-surface">
-                {collections.map((c) => (
-                  <tr key={c.id} className="transition hover:bg-surface-2/60">
-                    <td className="px-4 py-3.5">
-                      <p className="font-semibold">{localized(c.title, locale)}</p>
-                      <p className="text-xs text-subtle">/{c.slug}</p>
-                    </td>
-                    <td className="px-4 py-3.5 tabular-nums">{c.itemCount}</td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        <Badge tone={c.isPublished ? "success" : "neutral"}>{c.isPublished ? t("admin.live") : t("admin.draft")}</Badge>
-                        {c.isFeatured ? <Badge tone="accent">{t("home.featured")}</Badge> : null}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5 text-xs text-muted">{formatDate(c.updatedAt, locale)}</td>
-                    <td className="px-4 py-3.5 text-right">
-                      <Link href={`/admin/collections/${c.id}`} className="font-semibold text-accent hover:text-accent-strong">
-                        {t("admin.edit")}
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState
-            title={t("admin.empty")}
-            action={
-              <LinkButton href="/admin/collections/new">
-                <PlusIcon size={16} /> {t("admin.newCollection")}
-              </LinkButton>
-            }
-          />
-        )}
-      </section>
+    <>
+      <AdminPageHeader title={at("overview.title")} subtitle={at("overview.subtitle")} actions={<RangeTabs range={range} basePath="/admin" at={at} />} />
 
-      <div className="min-w-0 space-y-6">
-      <section aria-labelledby="tmdb-heading" className="rounded-3xl bg-surface p-6 ring-1 ring-line">
-        <h2 id="tmdb-heading" className="font-display text-base font-medium">{t("admin.tmdbStatus")}</h2>
-        <p className="mt-3 flex items-start gap-2 text-sm">
-          <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${tmdbReady ? "bg-success" : "bg-danger"}`} />
-          <span className={tmdbReady ? "text-success" : "text-danger"}>{tmdbReady ? t("admin.tmdbOk") : t("admin.tmdbMissing")}</span>
-        </p>
-      </section>
-      <section aria-labelledby="spotlight-heading" className="h-fit rounded-3xl bg-surface p-6 ring-1 ring-line">
-        <h2 id="spotlight-heading" className="font-display text-lg font-medium">{t("admin.spotlight")}</h2>
-        <p className="mt-1 mb-5 text-sm text-muted">{t("admin.spotlightHint")}</p>
-        <p className="mb-5 rounded-2xl bg-surface-2 px-4 py-3 text-sm">
-          {spotlightMovie ? t("admin.spotlightCurrent", { title: `${spotlightMovie.title} (#${spotlightMovie.id})` }) : t("admin.spotlightNone")}
-        </p>
-        <SpotlightForm current={spotlight} />
-      </section>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        <StatCard at={at} source="db" label={at("overview.totalUsers")} value={fmt(d.users.total)} />
+        <StatCard at={at} source="db" label={at("overview.newToday")} value={fmt(d.users.newToday)} />
+        <StatCard at={at} source="db" label={at("overview.newWeek")} value={fmt(d.users.newThisWeek)} />
+        <StatCard at={at} source="events" label={at("overview.visitors")} value={fmt(d.visitorDays)} hint={at("overview.visitorsHint")} />
+        <StatCard at={at} source="events" label={at("overview.pageViews")} value={fmt(d.pageViews)} />
+        <StatCard at={at} source="events" label={at("overview.movieViews")} value={fmt(d.movieViews)} />
+        <StatCard at={at} source="events" label={at("overview.searches")} value={fmt(d.searches)} />
+        <StatCard at={at} source="events" label={at("overview.watchlistInteractions")} value={fmt(d.watchlistInteractions)} hint={at("overview.watchlistHint")} />
       </div>
-    </div>
+      <p className="mt-3 text-xs text-subtle">{at("source.note")}</p>
+
+      <div className="mt-6 grid gap-4 xl:grid-cols-2">
+        <Panel at={at} title={at("overview.visits")} source="events">
+          {d.pageViews ? (
+            <TimeSeriesChart
+              locale={tag}
+              label={at("overview.visits")}
+              series={[
+                { label: at("series.views"), color: "#e8b44c", points: d.visitsSeries.views },
+                { label: at("series.visitors"), color: "#7dd3fc", points: d.visitsSeries.visitors },
+              ]}
+            />
+          ) : (
+            <EmptyNote>{at("empty.noEvents")}</EmptyNote>
+          )}
+        </Panel>
+        <Panel at={at} title={at("overview.userGrowth")} source="db" hint={`${at("overview.newSignups")}: ${fmt(d.newInRange.n)}`}>
+          <TimeSeriesChart locale={tag} label={at("overview.userGrowth")} series={[{ label: at("overview.totalAccounts"), color: "#79c99a", points: d.growth }]} />
+        </Panel>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1.4fr_1fr]">
+        <Panel at={at} title={at("overview.interactions")} source="events">
+          {d.movieViews || d.watchlistInteractions || d.searches ? (
+            <TimeSeriesChart
+              locale={tag}
+              label={at("overview.interactions")}
+              series={[
+                { label: at("series.movieViews"), color: "#e8b44c", points: d.interactions.movieViews },
+                { label: at("series.watchlistAdds"), color: "#79c99a", points: d.interactions.watchlistAdds },
+                { label: at("series.searches"), color: "#c4b5fd", points: d.interactions.searches },
+              ]}
+            />
+          ) : (
+            <EmptyNote>{at("empty.noEvents")}</EmptyNote>
+          )}
+        </Panel>
+        <Panel at={at} title={at("overview.popularMovies")} source="events">
+          <BarList
+            emptyLabel={at("empty.noData")}
+            items={d.popularMovies.map((m) => ({ key: m.movieId, label: m.title, value: m.count, href: `/movie/${m.movieId}` }))}
+          />
+        </Panel>
+      </div>
+
+      <Panel at={at} className="mt-4" title={at("overview.recentErrors")} source="db" action={<Link href="/admin/health" className="text-xs font-semibold text-accent hover:text-accent-strong">{at("nav.health")} →</Link>}>
+        {d.recentErrors.length ? (
+          <ul className="divide-y divide-line">
+            {d.recentErrors.map((e) => (
+              <li key={e.id} className="flex flex-col gap-1 py-2.5 text-sm sm:flex-row sm:items-center sm:gap-4">
+                <span className="w-40 shrink-0 text-xs text-subtle tabular-nums">{time(e.createdAt)}</span>
+                <span className="w-16 shrink-0 text-xs font-semibold text-muted uppercase">{e.source}</span>
+                <span className="font-mono text-xs text-danger">{e.event}</span>
+                <span className="min-w-0 truncate text-xs text-muted">{e.message}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyNote>{at("empty.noErrors")}</EmptyNote>
+        )}
+      </Panel>
+    </>
   );
 }

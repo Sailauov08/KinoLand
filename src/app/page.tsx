@@ -6,9 +6,9 @@ import { SparklesIcon } from "@/components/icons";
 import { RailSection, RailSkeleton } from "@/components/rail-section";
 import { buttonClass } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getCollectionItems, listCollections, localized, refreshCollectionSnapshots, type Collection } from "@/lib/db/collections";
+import { bannerOfTheDay, localized } from "@/lib/db/content";
 import { getList, refreshListSnapshots } from "@/lib/db/lists";
-import { getSpotlight } from "@/lib/db/settings";
+import { getDisplaySettings } from "@/lib/db/settings";
 import type { User } from "@/lib/db/users";
 import type { Locale } from "@/lib/i18n/config";
 import { getT } from "@/lib/i18n/server";
@@ -23,7 +23,7 @@ type Ctx = { locale: Locale; t: TFunction };
 export default async function HomePage() {
   const [{ locale, t }, user] = await Promise.all([getT(), getCurrentUser()]);
   const ctx = { locale, t };
-  const featured = listCollections({ publishedOnly: true, featuredOnly: true });
+  const display = getDisplaySettings();
   const moodGenres = user?.preferredGenres.length ? user.preferredGenres.slice(0, 2) : [878, 16];
 
   return (
@@ -32,15 +32,17 @@ export default async function HomePage() {
         <HomeHero {...ctx} />
       </Suspense>
 
-      {user ? (
+      {user && display.showPersonalized ? (
         <Suspense fallback={<RailSkeleton />}>
           <ForYouRail user={user} {...ctx} />
         </Suspense>
       ) : null}
 
-      <Suspense fallback={<RailSkeleton />}>
-        <TrendingRail {...ctx} />
-      </Suspense>
+      {display.showTrending ? (
+        <Suspense fallback={<RailSkeleton />}>
+          <TrendingRail {...ctx} />
+        </Suspense>
+      ) : null}
 
       {user ? (
         <Suspense fallback={<RailSkeleton />}>
@@ -48,68 +50,63 @@ export default async function HomePage() {
         </Suspense>
       ) : null}
 
-      {featured.map((c) => (
-        <Suspense key={c.id} fallback={<RailSkeleton />}>
-          <CollectionRail collection={c} {...ctx} />
+      {display.showTopRated ? (
+        <Suspense fallback={<RailSkeleton />}>
+          <TopRatedRail {...ctx} />
         </Suspense>
-      ))}
-
-      <Suspense fallback={<RailSkeleton />}>
-        <TopRatedRail {...ctx} />
-      </Suspense>
+      ) : null}
 
       {!user ? <PersonalizeCta t={t} /> : null}
 
-      <Suspense fallback={<RailSkeleton />}>
-        <NowPlayingRail {...ctx} />
-      </Suspense>
-
-      {moodGenres.map((g) => (
-        <Suspense key={g} fallback={<RailSkeleton />}>
-          <GenreRail genre={g} {...ctx} />
+      {display.showNowPlaying ? (
+        <Suspense fallback={<RailSkeleton />}>
+          <NowPlayingRail {...ctx} />
         </Suspense>
-      ))}
+      ) : null}
 
-      <Suspense fallback={<RailSkeleton />}>
-        <UpcomingRail {...ctx} />
-      </Suspense>
+      {display.showGenreMoods
+        ? moodGenres.map((g) => (
+            <Suspense key={g} fallback={<RailSkeleton />}>
+              <GenreRail genre={g} {...ctx} />
+            </Suspense>
+          ))
+        : null}
+
+      {display.showUpcoming ? (
+        <Suspense fallback={<RailSkeleton />}>
+          <UpcomingRail {...ctx} />
+        </Suspense>
+      ) : null}
     </>
   );
 }
 
+/** Admin-curated banner of the day (active banners rotate daily), else the week's top trending film. */
 async function HomeHero({ locale, t }: Ctx) {
-  const spotlight = getSpotlight();
-  let movieId = spotlight?.movieId;
+  const banner = bannerOfTheDay();
+  let movieId = banner?.movieId;
   if (!movieId) {
     const trending = await getTrending(locale);
     if (!trending.ok) return <MoviesUnavailable reason={trending.reason} t={t} className="container-page pt-10" />;
     movieId = trending.data[0]?.id;
   }
-  const res = movieId ? await getMovie(movieId, locale) : null;
+  let res = movieId ? await getMovie(movieId, locale) : null;
+  // A banner pointing at a hidden/removed film falls back to trending rather than an empty hero.
+  if (banner && res?.ok && !res.data) {
+    const trending = await getTrending(locale);
+    res = trending.ok && trending.data[0] ? await getMovie(trending.data[0].id, locale) : res;
+  }
   if (res && !res.ok) return <MoviesUnavailable reason={res.reason} t={t} className="container-page pt-10" />;
   const movie = res?.data;
   if (!movie) return <div className="h-8" />;
+  const isBanner = banner?.movieId === movie.id;
   return (
     <Hero
       movie={movie}
       locale={locale}
       t={t}
-      eyebrow={spotlight ? t("home.editorsPick") : t("home.featured")}
-      tagline={spotlight ? spotlight.tagline[locale] || spotlight.tagline.en || undefined : undefined}
-    />
-  );
-}
-
-async function CollectionRail({ collection: c, ...ctx }: Ctx & { collection: Collection }) {
-  const items = getCollectionItems(c.id);
-  const movies = await withFreshData(items.map((i) => i.snapshot), ctx.locale, (fresh) => refreshCollectionSnapshots(c.id, fresh));
-  return (
-    <RailSection
-      title={localized(c.title, ctx.locale)}
-      eyebrow={ctx.t("home.editorsPick")}
-      movies={movies}
-      href={`/collections/${c.slug}`}
-      {...ctx}
+      eyebrow={isBanner ? localized(banner.headline, locale) || t("home.editorsPick") : t("home.featured")}
+      tagline={isBanner ? localized(banner.description, locale) || undefined : undefined}
     />
   );
 }

@@ -1,8 +1,12 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { parseFilters } from "@/lib/movies/filters";
 
-// Configure a (fake) key before modules read the environment.
+// Configure a (fake) key and a throwaway database before modules read the environment.
 process.env.TMDB_READ_ACCESS_TOKEN = "test-token";
+process.env.DATABASE_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kinoland-svc-")), "svc.db");
 
 type Service = typeof import("@/lib/movies/service");
 let service: Service;

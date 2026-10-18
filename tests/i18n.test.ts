@@ -36,3 +36,18 @@ describe("matchAcceptLanguage", () => {
     expect(matchAcceptLanguage(null)).toBe("en");
   });
 });
+
+describe("admin dictionaries", () => {
+  it("ru and kk match the English admin keys and placeholders", async () => {
+    const { adminDictionaries } = await import("@/lib/i18n/admin");
+    const enKeys = Object.keys(adminDictionaries.en).sort();
+    for (const locale of ["ru", "kk"] as const) {
+      const dict = adminDictionaries[locale];
+      expect(Object.keys(dict).sort()).toEqual(enKeys);
+      for (const key of enKeys as (keyof typeof dict)[]) {
+        expect(dict[key].trim(), `${locale}:${key}`).not.toBe("");
+        expect(placeholders(dict[key]), `${locale}:${key}`).toEqual(placeholders(adminDictionaries.en[key]));
+      }
+    }
+  });
+});

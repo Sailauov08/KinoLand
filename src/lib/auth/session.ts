@@ -4,10 +4,10 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { env } from "@/lib/env";
 import { getDb } from "@/lib/db";
-import { findUserById, type User } from "@/lib/db/users";
+import { findUserById, touchLastSeen, type User } from "@/lib/db/users";
 import { hashToken, newSessionToken } from "./password";
 
-const COOKIE = "kino_session";
+export const SESSION_COOKIE = "kino_session";
 const TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function createSession(userId: string) {
@@ -21,7 +21,7 @@ export async function createSession(userId: string) {
     now + TTL_MS,
     now,
   );
-  (await cookies()).set(COOKIE, token, {
+  (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: env.isProduction,
@@ -30,30 +30,41 @@ export async function createSession(userId: string) {
   });
 }
 
+/** Deletes the session row (server-side invalidation) and clears the cookie. */
 export async function destroySession() {
   const jar = await cookies();
-  const token = jar.get(COOKIE)?.value;
+  const token = jar.get(SESSION_COOKIE)?.value;
   if (token) getDb().prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
-  jar.delete(COOKIE);
+  jar.delete(SESSION_COOKIE);
 }
 
 /** Revokes every session of a user except (optionally) the current one — used after password change. */
 export async function revokeOtherSessions(userId: string) {
-  const token = (await cookies()).get(COOKIE)?.value;
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
   const keep = token ? hashToken(token) : "";
   getDb().prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?").run(userId, keep);
 }
 
-/** Current user for this request (memoised per request). Returns null when signed out or expired. */
-export const getCurrentUser = cache(async (): Promise<User | null> => {
-  const token = (await cookies()).get(COOKIE)?.value;
+/** Signs a user out everywhere (e.g. on suspension). */
+export function revokeAllSessions(userId: string): number {
+  return Number(getDb().prepare("DELETE FROM sessions WHERE user_id = ?").run(userId).changes);
+}
+
+/** Resolves a raw session token to an active user, or null when missing, expired or suspended. */
+export function userFromToken(token: string | undefined | null): User | null {
   if (!token) return null;
   const row = getDb().prepare("SELECT user_id, expires_at FROM sessions WHERE token_hash = ?").get(hashToken(token)) as
     | { user_id: string; expires_at: number }
     | undefined;
   if (!row || row.expires_at < Date.now()) return null;
-  return findUserById(row.user_id);
-});
+  const user = findUserById(row.user_id);
+  if (!user || user.status !== "active") return null;
+  touchLastSeen(user.id, user.lastSeenAt);
+  return user;
+}
+
+/** Current user for this request (memoised per request). */
+export const getCurrentUser = cache(async (): Promise<User | null> => userFromToken((await cookies()).get(SESSION_COOKIE)?.value));
 
 export async function requireUser(nextPath: string): Promise<User> {
   const user = await getCurrentUser();
@@ -61,6 +72,7 @@ export async function requireUser(nextPath: string): Promise<User> {
   return user;
 }
 
+/** Page guard: the role is read from the database on every request, never from the client. */
 export async function requireAdmin(nextPath = "/admin"): Promise<User> {
   const user = await requireUser(nextPath);
   if (user.role !== "admin") redirect("/?denied=admin");

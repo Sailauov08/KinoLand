@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { TrackEvent } from "@/components/analytics";
 import { MoviesUnavailable } from "@/components/movies-unavailable";
 import { FilterPanel } from "@/components/filter-panel";
 import { SearchIcon } from "@/components/icons";
@@ -57,9 +58,32 @@ async function Results({ filters, locale, t }: { filters: MovieFilters; locale: 
   const res = await searchMovies(filters, locale);
   if (!res.ok) return <MoviesUnavailable reason={res.reason} t={t} />;
   const { results, totalPages, totalResults, page, mode } = res.data;
+  const shownTotal = mode === "search" && hasActiveFilters(filters) ? results.length : totalResults;
+  const tracker =
+    filters.page === 1 && (filters.query || hasActiveFilters(filters)) ? (
+      <TrackEvent
+        event={{
+          type: "movie_search",
+          path: "/search",
+          props: {
+            query: filters.query || undefined,
+            results: shownTotal,
+            mode,
+            topMovieId: results[0]?.id,
+            topTitle: results[0]?.title,
+            genres: filters.genres.length ? filters.genres : undefined,
+          },
+        }}
+      />
+    ) : null;
 
   if (!results.length) {
-    return <EmptyState icon={<SearchIcon size={26} />} title={t("search.noResults")} text={t("search.noResultsText")} />;
+    return (
+      <>
+        {tracker}
+        <EmptyState icon={<SearchIcon size={26} />} title={t("search.noResults")} text={t("search.noResultsText")} />
+      </>
+    );
   }
 
   const hrefFor = (p: number) => {
@@ -69,8 +93,9 @@ async function Results({ filters, locale, t }: { filters: MovieFilters; locale: 
 
   return (
     <>
+      {tracker}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
-        <p aria-live="polite">{t("search.total", { n: formatNumber(mode === "search" && hasActiveFilters(filters) ? results.length : totalResults, locale) })}</p>
+        <p aria-live="polite">{t("search.total", { n: formatNumber(shownTotal, locale) })}</p>
         {mode === "search" && hasActiveFilters(filters) ? <p className="text-xs text-subtle">{t("search.filteredNote")}</p> : null}
       </div>
       <MovieGrid>
